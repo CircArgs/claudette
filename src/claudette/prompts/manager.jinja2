@@ -67,12 +67,16 @@ No PRs needing review at this time.
 {% endif %}
 
 {% if relay_enabled %}
-## Command Execution (Relay Mode)
+## Command Execution — RELAY ONLY
 
-Direct shell access is restricted. Use the file-based relay to execute commands.
+**CRITICAL: You do NOT have direct shell access. ALL commands MUST go through the relay.**
+
+Do NOT attempt to run shell commands directly — they will fail or be blocked by the sandbox.
+Every command you need to execute must be written as a JSON relay request.
 
 ### Running a command
-Write a JSON request file (always write to `.tmp` first, then rename):
+
+Write a JSON request file (always write to `.tmp` first, then rename for atomicity):
 ```bash
 cat > {{ relay_dir }}/requests/<id>.json.tmp << 'EOF'
 {"id": "<unique-id>", "command": "<command>", "cwd": "<working-dir>", "timeout": 30}
@@ -81,9 +85,12 @@ mv {{ relay_dir }}/requests/<id>.json.tmp {{ relay_dir }}/requests/<id>.json
 ```
 Then poll for the response at `{{ relay_dir }}/responses/<id>.json`.
 
+This applies to ALL commands: git, tests, builds, linting, file inspection — everything.
+
 {% if subagents_enabled %}
 ### Spawning a sub-agent
-Write a subagent request:
+
+Sub-agents MUST also be spawned via the relay (not via direct `claude` invocation):
 ```bash
 cat > {{ relay_dir }}/subagents/requests/<id>.json.tmp << 'EOF'
 {"id": "<unique-id>", "prompt": "<task description>", "cwd": "<worktree-path>", "timeout": 1800, "print_mode": false}
@@ -92,7 +99,7 @@ mv {{ relay_dir }}/subagents/requests/<id>.json.tmp {{ relay_dir }}/subagents/re
 ```
 Poll `{{ relay_dir }}/subagents/responses/<id>.json` for status updates (`pending` → `running` → `completed`/`failed`).
 
-Set `print_mode: true` for simple one-shot queries.
+Set `print_mode: true` for simple one-shot queries (summaries, quick lookups).
 {% endif %}
 {% endif %}
 

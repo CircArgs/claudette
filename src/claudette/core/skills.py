@@ -164,13 +164,15 @@ RELAY_SKILLS: dict[str, str] = {
     "claudette-relay": """\
 ---
 name: claudette-relay
-description: Use when direct shell access is blocked (sandbox mode). Write JSON files to execute commands or spawn subagents via the relay watchdog. Use automatically when command execution fails due to sandbox restrictions.
+description: ALL command execution MUST go through the relay. You do not have direct shell access. Write JSON request files to run commands or spawn subagents — the relay watchdog executes them on your behalf.
 argument-hint: (file-based IPC)
 ---
 
-# claudette relay — file-based IPC for sandboxed environments
+# claudette relay — MANDATORY command execution interface
 
-When running in a sandbox that blocks direct command execution, use the relay.
+**You do NOT have direct shell access. ALL commands MUST go through the relay.**
+
+Do NOT use subprocess, os.system, or run shell commands directly — they will fail.
 A watchdog process runs outside the sandbox and executes requests on your behalf.
 
 ## Running a command
@@ -227,20 +229,27 @@ cat .claudette/relay/subagents/responses/worker1.json
 
 ## Important
 
-- Always write to `.tmp` first, then rename — this prevents the watchdog from reading partial files
+- **ALL commands go through the relay — no exceptions.** Never run commands directly.
+- Always write to `.tmp` first, then rename — prevents the watchdog from reading partial files
 - The watchdog validates commands against an allowlist before executing
 - Subagent sessions run as full `claude` CLI invocations
 """,
 }
 
 
-def install_skills(project_dir: Path, scope: str = "worker") -> list[str]:
+def install_skills(
+    project_dir: Path, scope: str = "worker", relay_enabled: bool = False
+) -> list[str]:
     """Install skills into <project_dir>/.claude/skills/.
 
     scope:
       "worker" — only worker-scoped skills (for worktree .claude/)
       "manager" — worker + manager skills (for project root .claude/)
-      "all" — everything (same as manager)
+      "all" — worker + manager + relay (legacy, same as manager + relay)
+
+    relay_enabled:
+      When True, relay skills are installed regardless of scope — ALL Claude
+      instances must use the relay when it's enabled.
     """
     skills_dir = project_dir / ".claude" / "skills"
     skills: dict[str, str] = {}
@@ -248,7 +257,7 @@ def install_skills(project_dir: Path, scope: str = "worker") -> list[str]:
     skills.update(WORKER_SKILLS)
     if scope in ("manager", "all"):
         skills.update(MANAGER_SKILLS)
-    if scope in ("relay", "all"):
+    if relay_enabled or scope in ("relay", "all"):
         skills.update(RELAY_SKILLS)
 
     installed = []

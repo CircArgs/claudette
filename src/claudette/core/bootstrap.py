@@ -262,6 +262,62 @@ def bootstrap(config: Config) -> None:
     logger.info("Bootstrap complete. Project at %s", config.project_dir)
 
 
+def _relay_instructions(config: Config) -> str:
+    """Generate command execution instructions for AGENTS.md."""
+    if not config.relay.enabled:
+        return "You have direct shell access. Run commands normally."
+
+    relay_dir = config.relay_dir
+    lines = [
+        "**IMPORTANT: You do NOT have direct shell access. ALL commands MUST go through the relay.**",
+        "",
+        "Do NOT use `subprocess`, `os.system`, or run shell commands directly — they will fail.",
+        "Instead, write JSON request files and read JSON response files.",
+        "",
+        "### Running a command",
+        "",
+        "1. Write a request file (`.tmp` first, then rename for atomicity):",
+        f"   Path: `{relay_dir}/requests/<id>.json`",
+        "   ```json",
+        '   {"id": "<unique-id>", "command": "git status", "cwd": "<repo_path>", "timeout": 30}',
+        "   ```",
+        "",
+        "2. Poll for the response (appears within ~1s):",
+        f"   Path: `{relay_dir}/responses/<id>.json`",
+        "   ```json",
+        '   {"id": "<id>", "returncode": 0, "stdout": "...", "stderr": "...", "timed_out": false, "error": null}',
+        "   ```",
+        "",
+    ]
+
+    if config.relay.subagents_enabled:
+        lines.extend(
+            [
+                "### Spawning a sub-agent",
+                "",
+                "For tasks that need a full Claude session:",
+                "",
+                "1. Write a subagent request:",
+                f"   Path: `{relay_dir}/subagents/requests/<id>.json`",
+                "   ```json",
+                '   {"id": "<id>", "prompt": "<task>", "cwd": "<worktree-path>", "timeout": 1800, "print_mode": false}',
+                "   ```",
+                "",
+                "2. Poll for status (`pending` → `running` → `completed`/`failed`):",
+                f"   Path: `{relay_dir}/subagents/responses/<id>.json`",
+                "",
+            ]
+        )
+
+    # List allowed commands from config
+    allowed = config.relay.allowed_commands
+    if allowed:
+        names = [c.strip() for c in allowed if c.strip()]
+        lines.append(f"Allowed command prefixes: {', '.join(names)}")
+
+    return "\n".join(lines)
+
+
 def _init_agent_instructions(config: Config) -> None:
     """Create AGENTS.md (canonical) and symlink tool-specific files to it.
 
@@ -350,24 +406,8 @@ claudette memory search "<issue title or keywords>"
 - `{_primary_label(labels.needs_review) or "(disabled)"}` — PR ready for review
 - `{_primary_label(labels.ready_for_dev) or "(disabled)"}` — issue is ready to pick up
 
-## Command Relay
-
-If direct shell access is restricted (sandbox mode), use the command relay.
-Run `claudette relay start` in a separate terminal, then use file-based IPC:
-
-1. Write a request file (write to .tmp first, then rename for atomicity):
-   Path: `{config.relay_dir}/requests/<id>.json`
-   ```json
-   {{"id": "<unique-id>", "command": "git status", "cwd": "<repo_path>", "timeout": 30}}
-   ```
-
-2. Read the response (poll until it appears, ~1s):
-   Path: `{config.relay_dir}/responses/<id>.json`
-   ```json
-   {{"id": "<id>", "returncode": 0, "stdout": "...", "stderr": "...", "timed_out": false, "error": null}}
-   ```
-
-Allowed command prefixes: git, gh, npm, npx, cargo, make, pytest, python, pip, ls, cat, find, grep, ruff, mypy, docker, kubectl.
+## Command Execution
+{_relay_instructions(config)}
 """)
     logger.info("Created AGENTS.md")
     _ensure_agent_symlinks(config.project_dir)
