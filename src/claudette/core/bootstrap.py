@@ -319,20 +319,11 @@ def _relay_instructions(config: Config) -> str:
 
 
 def _init_agent_instructions(config: Config) -> None:
-    """Create AGENTS.md (canonical) and symlink tool-specific files to it.
-
-    AGENTS.md is the cross-tool standard (Codex, Cursor, Gemini CLI, etc.).
-    CLAUDE.md is symlinked so Claude Code picks it up too.
-
-    This is the MANAGER-level instruction file. It runs in the project root
-    where claudette launches the manager session. Workers run in worktrees
-    created from individual repos, so they pick up the repo's own files.
-    """
+    """Create AGENTS.md if it doesn't exist, then ensure symlinks."""
     agents_md = config.project_dir / "AGENTS.md"
     claude_md = config.project_dir / "CLAUDE.md"
 
     if agents_md.exists():
-        # Already initialized — just ensure symlinks are in place
         _ensure_agent_symlinks(config.project_dir)
         return
 
@@ -343,6 +334,19 @@ def _init_agent_instructions(config: Config) -> None:
         _ensure_agent_symlinks(config.project_dir)
         return
 
+    _write_agents_md(config)
+    _ensure_agent_symlinks(config.project_dir)
+
+
+def regenerate_agents_md(config: Config) -> None:
+    """Force-regenerate AGENTS.md and ensure symlinks. Used by `claudette update`."""
+    _write_agents_md(config)
+    _ensure_agent_symlinks(config.project_dir)
+
+
+def _write_agents_md(config: Config) -> None:
+    """Write AGENTS.md from current config."""
+    agents_md = config.project_dir / "AGENTS.md"
     repo_lines = "\n".join(
         f"- **{r.name}** at `{r.path or r.name.replace('/', '_')}` (branch: `{r.default_branch}`)"
         for r in config.repositories
@@ -410,7 +414,6 @@ claudette memory search "<issue title or keywords>"
 {_relay_instructions(config)}
 """)
     logger.info("Created AGENTS.md")
-    _ensure_agent_symlinks(config.project_dir)
 
 
 # Map of tool-specific filenames that should symlink to AGENTS.md

@@ -90,6 +90,33 @@ BANNER = """\
 """
 
 
+def cmd_update(config: Config) -> None:
+    """Regenerate all derived files from current config."""
+    from claudette.core.bootstrap import _ensure_labels, regenerate_agents_md
+    from claudette.core.skills import install_skills
+
+    # 1. Regenerate AGENTS.md + symlinks
+    regenerate_agents_md(config)
+    console.print("[green]✓[/green] AGENTS.md regenerated")
+
+    # 2. Reinstall skills
+    relay_on = config.relay.enabled
+    installed = install_skills(config.project_dir, scope="manager", relay_enabled=relay_on)
+    console.print(f"[green]✓[/green] Skills installed: {', '.join(installed)}")
+
+    # 3. Ensure labels exist on GitHub
+    _ensure_labels(config)
+    console.print("[green]✓[/green] GitHub labels ensured")
+
+    # 4. Copy any new default prompt templates
+    from claudette.core.bootstrap import _copy_default_prompts
+
+    _copy_default_prompts(config.prompts_dir)
+    console.print("[green]✓[/green] Prompt templates updated")
+
+    console.print("\n[bold]Project updated.[/bold]")
+
+
 def cmd_status(config: Config) -> None:
     """One screenful of everything you need to know."""
     from claudette.core.dag import build_dag, get_blocked_issues, get_ready_issues

@@ -294,6 +294,18 @@ def issue_depends(ctx: click.Context, issue_ref: str, on_ref: str) -> None:
 # ── Setup commands ────────────────────────────────────────────────────────
 
 
+@main.command()
+@click.pass_context
+def update(ctx: click.Context) -> None:
+    """Regenerate AGENTS.md, skills, labels, and prompts from current config.
+
+    Run this after editing config.yaml to apply changes.
+    """
+    from claudette.cli.commands import cmd_update
+
+    cmd_update(load_config(ctx))
+
+
 @main.command(name="init")
 @click.argument("project_dir", type=click.Path(path_type=Path))
 @click.pass_context

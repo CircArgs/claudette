@@ -296,6 +296,7 @@ Commands are validated against an allowlist and blocklist defined in config. The
 |---|---|
 | `claudette` | System status (same as `claudette status`) |
 | `claudette init <project-dir>` | Initialize a project -- discover repos, bootstrap config, install cron |
+| `claudette update` | Regenerate AGENTS.md, skills, labels, and prompts from current config |
 | `claudette list` | List all registered projects |
 | `claudette status` | System health at a glance |
 | `claudette watch [-n SECS]` | Refresh status on a loop (default: every 5s) |
