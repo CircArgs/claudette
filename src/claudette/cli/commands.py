@@ -50,11 +50,29 @@ def _require_token() -> str:
     return token
 
 
-def _fetch_all_issues(config: Config, token: str):
-    """Fetch all open issues across configured repos."""
+def _make_github_client(token: str):
+    """Create the best available GitHub client.
+
+    Prefers GhCliGitHubClient (uses `gh api`, no Python SSL) when the
+    gh CLI is available.  Falls back to LiveGitHubClient (httpx).
+    """
+    try:
+        result = subprocess.run(["gh", "--version"], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            from claudette.core.gh_cli_client import GhCliGitHubClient
+
+            return GhCliGitHubClient()
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
     from claudette.core.github_client import LiveGitHubClient
 
-    gh = LiveGitHubClient(token)
+    return LiveGitHubClient(token)
+
+
+def _fetch_all_issues(config: Config, token: str):
+    """Fetch all open issues across configured repos."""
+    gh = _make_github_client(token)
     all_issues = []
     for repo in config.repositories:
         all_issues.extend(gh.fetch_issues(repo.name, datetime(2000, 1, 1, tzinfo=UTC)))
@@ -447,13 +465,12 @@ def cmd_graph(config: Config, blocked_only: bool = False, repo: str | None = Non
 def cmd_tick(config: Config, dry_run: bool = False, extra_prompt: str | None = None) -> None:
     from claudette.core.budget import BudgetTracker
     from claudette.core.clock import SystemClock
-    from claudette.core.github_client import LiveGitHubClient
     from claudette.core.llm_client import ClaudeCLIClient
     from claudette.core.poll import run_tick
 
     token = _require_token()
     state = config.state_dir
-    gh = LiveGitHubClient(token)
+    gh = _make_github_client(token)
     llm = ClaudeCLIClient(config.llm, prompts_dir=config.prompts_dir)
 
     with console.status("Running tick..."):
@@ -610,11 +627,9 @@ def _parse_issue_ref(config: Config, issue_ref: str) -> tuple[str, int]:
 
 def cmd_claim(config: Config, issue_ref: str) -> None:
     """Mark an issue as claimed by the user so claudette won't touch it."""
-    from claudette.core.github_client import LiveGitHubClient
-
     repo_name, number = _parse_issue_ref(config, issue_ref)
     token = _require_token()
-    gh = LiveGitHubClient(token)
+    gh = _make_github_client(token)
     label = _primary_label(config.github.labels.in_progress)
     if not label:
         console.print("[red]No in-progress label configured[/red]")
@@ -625,11 +640,9 @@ def cmd_claim(config: Config, issue_ref: str) -> None:
 
 def cmd_unclaim(config: Config, issue_ref: str) -> None:
     """Release a claimed issue so claudette can pick it up."""
-    from claudette.core.github_client import LiveGitHubClient
-
     repo_name, number = _parse_issue_ref(config, issue_ref)
     token = _require_token()
-    gh = LiveGitHubClient(token)
+    gh = _make_github_client(token)
     label = _primary_label(config.github.labels.in_progress)
     if not label:
         console.print("[red]No in-progress label configured[/red]")
@@ -667,30 +680,26 @@ def cmd_resume(config: Config, repo_name: str) -> None:
 
 def _apply_config_label(config: Config, issue_ref: str, label_value, action: str) -> None:
     """Helper: apply or remove a label from config onto an issue."""
-    from claudette.core.github_client import LiveGitHubClient
-
     repo_name, number = _parse_issue_ref(config, issue_ref)
     label = _primary_label(label_value)
     if not label:
         console.print(f"[red]No {action} label configured[/red]")
         sys.exit(1)
     token = _require_token()
-    gh = LiveGitHubClient(token)
+    gh = _make_github_client(token)
     gh.apply_label(repo_name, number, label)
     console.print(f"[green]Applied '{label}' to {repo_name}#{number}[/green]")
 
 
 def _remove_config_label(config: Config, issue_ref: str, label_value, action: str) -> None:
     """Helper: remove a label from config from an issue."""
-    from claudette.core.github_client import LiveGitHubClient
-
     repo_name, number = _parse_issue_ref(config, issue_ref)
     label = _primary_label(label_value)
     if not label:
         console.print(f"[red]No {action} label configured[/red]")
         sys.exit(1)
     token = _require_token()
-    gh = LiveGitHubClient(token)
+    gh = _make_github_client(token)
     gh.remove_label(repo_name, number, label)
     console.print(f"[green]Removed '{label}' from {repo_name}#{number}[/green]")
 
@@ -730,15 +739,13 @@ def cmd_issue_create(
     ready: bool = False,
 ) -> None:
     """Create a new issue on GitHub."""
-    from claudette.core.github_client import LiveGitHubClient
-
     repo_name = repo or (config.repositories[0].name if config.repositories else None)
     if not repo_name:
         console.print("[red]No repo specified and no default repo configured[/red]")
         sys.exit(1)
 
     token = _require_token()
-    gh = LiveGitHubClient(token)
+    gh = _make_github_client(token)
 
     labels = []
     if ready:
@@ -753,13 +760,11 @@ def cmd_issue_create(
 
 def cmd_issue_depends(config: Config, issue_ref: str, on_ref: str) -> None:
     """Add a dependency between two issues."""
-    from claudette.core.github_client import LiveGitHubClient
-
     repo_name, number = _parse_issue_ref(config, issue_ref)
     dep_repo, dep_number = _parse_issue_ref(config, on_ref)
 
     token = _require_token()
-    gh = LiveGitHubClient(token)
+    gh = _make_github_client(token)
 
     issue = gh.get_issue(repo_name, number)
 
