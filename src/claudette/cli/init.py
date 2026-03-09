@@ -122,13 +122,16 @@ def run_init(project_dir: Path) -> None:
 
     console.print("[green]Project ready.[/green]\n")
 
-    # Install Claude Code skills
-    try:
-        installed = install_skills(project_dir, scope="manager")
-        if installed:
-            console.print(f"[green]Installed skills:[/green] {', '.join(installed)}")
-    except Exception as e:
-        console.print(f"[yellow]Skill install failed:[/yellow] {e}")
+    # Install Claude Code skills (skip when relay is enabled — docs go in AGENTS.md)
+    if relay_config.enabled:
+        console.print("[dim]Relay enabled — CLI docs injected into AGENTS.md[/dim]")
+    else:
+        try:
+            installed = install_skills(project_dir, scope="manager")
+            if installed:
+                console.print(f"[green]Installed skills:[/green] {', '.join(installed)}")
+        except Exception as e:
+            console.print(f"[yellow]Skill install failed:[/yellow] {e}")
 
     # Cron
     if questionary.confirm("Install cron for automatic polling?", default=True).ask():

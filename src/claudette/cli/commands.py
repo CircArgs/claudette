@@ -99,9 +99,12 @@ def cmd_update(config: Config) -> None:
     regenerate_agents_md(config)
     console.print("[green]✓[/green] AGENTS.md regenerated")
 
-    # 2. Reinstall skills
-    installed = install_skills(config.project_dir, scope="manager")
-    console.print(f"[green]✓[/green] Skills installed: {', '.join(installed)}")
+    # 2. Reinstall skills (skip when relay is enabled — docs are in AGENTS.md)
+    if config.relay.enabled:
+        console.print("[green]✓[/green] CLI docs injected into AGENTS.md (relay mode)")
+    else:
+        installed = install_skills(config.project_dir, scope="manager")
+        console.print(f"[green]✓[/green] Skills installed: {', '.join(installed)}")
 
     # 3. Ensure labels exist on GitHub
     _ensure_labels(config)

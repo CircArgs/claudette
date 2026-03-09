@@ -160,6 +160,33 @@ claudette log --repo owner/repo --issue 42 --level warning
 }
 
 
+def _strip_frontmatter(content: str) -> str:
+    """Strip YAML frontmatter (---...---) from skill content."""
+    lines = content.strip().splitlines()
+    if lines and lines[0].strip() == "---":
+        for i, line in enumerate(lines[1:], 1):
+            if line.strip() == "---":
+                return "\n".join(lines[i + 1 :]).strip()
+    return content.strip()
+
+
+def get_cli_reference(scope: str = "manager") -> str:
+    """Return the full CLI command reference as plain markdown.
+
+    Used to inject into AGENTS.md when relay is enabled (instead of
+    installing skills that require explicit invocation).
+    """
+    skills: dict[str, str] = {}
+    skills.update(WORKER_SKILLS)
+    if scope in ("manager", "all"):
+        skills.update(MANAGER_SKILLS)
+
+    sections = []
+    for content in skills.values():
+        sections.append(_strip_frontmatter(content))
+    return "\n\n".join(sections)
+
+
 def install_skills(project_dir: Path, scope: str = "worker") -> list[str]:
     """Install skills into <project_dir>/.claude/skills/.
 
@@ -168,8 +195,8 @@ def install_skills(project_dir: Path, scope: str = "worker") -> list[str]:
       "manager" — worker + manager skills (for project root .claude/)
       "all" — worker + manager skills
 
-    Relay instructions are NOT installed as skills — they live in AGENTS.md
-    so they're always active without requiring explicit invocation.
+    When relay is enabled, skip skill installation — all command docs
+    are injected directly into AGENTS.md instead.
     """
     skills_dir = project_dir / ".claude" / "skills"
     skills: dict[str, str] = {}

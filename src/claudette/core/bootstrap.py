@@ -359,11 +359,13 @@ def _relay_instructions(config: Config) -> str:
         )
 
     # claudette CLI commands via relay
+    from claudette.core.skills import get_cli_reference
+
     lines.extend(
         [
             "### Running claudette commands",
             "",
-            "All `claudette` CLI commands must also go through the relay:",
+            "All `claudette` CLI commands must also go through the relay. Example:",
             "",
             "```bash",
             f"cat > {relay_dir}/requests/mem1.json.tmp << 'REQEOF'",
@@ -373,12 +375,13 @@ def _relay_instructions(config: Config) -> str:
             f"mv {relay_dir}/requests/mem1.json.tmp {relay_dir}/requests/mem1.json",
             "```",
             "",
-            "Useful claudette commands:",
-            '- `claudette memory search "<query>"` — find related past work',
-            "- `claudette queue --ready` — see what's ready to work on",
-            "- `claudette why <issue-ref>` — explain why an issue is blocked",
-            "- `claudette ready <issue-ref>` / `claudette block <issue-ref>` — update issue status",
-            '- `claudette issue create "<title>" --body "<body>"` — file a follow-up issue',
+            "---",
+            "",
+            "## claudette CLI reference",
+            "",
+            "All commands below must be executed via the relay (see above).",
+            "",
+            get_cli_reference("manager"),
         ]
     )
 
