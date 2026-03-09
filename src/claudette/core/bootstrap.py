@@ -271,49 +271,116 @@ def _relay_instructions(config: Config) -> str:
     lines = [
         "**IMPORTANT: You do NOT have direct shell access. ALL commands MUST go through the relay.**",
         "",
-        "Do NOT use `subprocess`, `os.system`, or run shell commands directly — they will fail.",
-        "Instead, write JSON request files and read JSON response files.",
+        "Do NOT use `subprocess`, `os.system`, or attempt to run shell commands directly — they will",
+        "fail or be blocked by the sandbox. Every command (git, tests, builds, linting, `claudette` CLI)",
+        "must be written as a JSON relay request.",
         "",
         "### Running a command",
         "",
-        "1. Write a request file (`.tmp` first, then rename for atomicity):",
-        f"   Path: `{relay_dir}/requests/<id>.json`",
-        "   ```json",
-        '   {"id": "<unique-id>", "command": "git status", "cwd": "<repo_path>", "timeout": 30}',
-        "   ```",
+        "Always write to `.tmp` first, then rename — this prevents the watchdog from reading partial files.",
         "",
-        "2. Poll for the response (appears within ~1s):",
-        f"   Path: `{relay_dir}/responses/<id>.json`",
-        "   ```json",
-        '   {"id": "<id>", "returncode": 0, "stdout": "...", "stderr": "...", "timed_out": false, "error": null}',
-        "   ```",
+        "```bash",
+        f"cat > {relay_dir}/requests/cmd1.json.tmp << 'REQEOF'",
+        '{"id": "cmd1", "command": "git status", "cwd": "/path/to/repo", "timeout": 30}',
+        "REQEOF",
+        f"mv {relay_dir}/requests/cmd1.json.tmp {relay_dir}/requests/cmd1.json",
+        "```",
+        "",
+        "Then poll for the response:",
+        "",
+        "```bash",
+        f"cat {relay_dir}/responses/cmd1.json",
+        "```",
+        "",
+        "**Request fields:**",
+        "- `id` — unique identifier (use descriptive names like `git-status-1`, `pytest-run-1`)",
+        "- `command` — the shell command to execute",
+        "- `cwd` — working directory (use the repo path or worktree path)",
+        "- `timeout` — max seconds (default 30, hard cap 300)",
+        "",
+        "**Response fields:**",
+        "- `returncode` — exit code (0 = success)",
+        "- `stdout` / `stderr` — command output",
+        "- `timed_out` — true if the command exceeded the timeout",
+        "- `error` — set if the command was blocked or failed to execute",
         "",
     ]
+
+    # List allowed commands from config
+    allowed = config.relay.allowed_commands
+    if allowed:
+        names = [c.strip() for c in allowed if c.strip()]
+        lines.extend(
+            [
+                f"**Allowed command prefixes:** {', '.join(names)}",
+                "",
+                "Commands not matching these prefixes will be rejected by the watchdog.",
+                "",
+            ]
+        )
 
     if config.relay.subagents_enabled:
         lines.extend(
             [
                 "### Spawning a sub-agent",
                 "",
-                "For tasks that need a full Claude session:",
+                "For tasks that need a full Claude session (implementing features, reviewing PRs),",
+                "spawn a sub-agent via the relay — do NOT run `claude` directly.",
                 "",
-                "1. Write a subagent request:",
-                f"   Path: `{relay_dir}/subagents/requests/<id>.json`",
-                "   ```json",
-                '   {"id": "<id>", "prompt": "<task>", "cwd": "<worktree-path>", "timeout": 1800, "print_mode": false}',
-                "   ```",
+                "```bash",
+                f"cat > {relay_dir}/subagents/requests/worker1.json.tmp << 'REQEOF'",
+                '{"id": "worker1", "prompt": "Implement auth middleware in src/auth.py. Write tests.",',
+                ' "cwd": "/path/to/worktree", "timeout": 1800, "print_mode": false}',
+                "REQEOF",
+                f"mv {relay_dir}/subagents/requests/worker1.json.tmp {relay_dir}/subagents/requests/worker1.json",
+                "```",
                 "",
-                "2. Poll for status (`pending` → `running` → `completed`/`failed`):",
-                f"   Path: `{relay_dir}/subagents/responses/<id>.json`",
+                "Poll for status updates:",
+                "",
+                "```bash",
+                f"cat {relay_dir}/subagents/responses/worker1.json",
+                "```",
+                "",
+                "**Subagent request fields:**",
+                "- `id` — unique identifier",
+                "- `prompt` — the full task description for the sub-agent",
+                "- `cwd` — working directory (always a worktree, never the base repo)",
+                "- `timeout` — max seconds (default 1800 = 30 min)",
+                "- `print_mode` — `true` for one-shot `claude --print` (summaries, quick lookups),"
+                " `false` for a full interactive session",
+                "",
+                "**Subagent response fields:**",
+                "- `status` — `pending` → `running` → `completed` / `failed` / `timed_out`",
+                "- `pid` — process ID (once running)",
+                "- `output` — stdout from the session (once completed)",
+                "- `error` — error message (if failed)",
                 "",
             ]
         )
 
-    # List allowed commands from config
-    allowed = config.relay.allowed_commands
-    if allowed:
-        names = [c.strip() for c in allowed if c.strip()]
-        lines.append(f"Allowed command prefixes: {', '.join(names)}")
+    # claudette CLI commands via relay
+    lines.extend(
+        [
+            "### Running claudette commands",
+            "",
+            "All `claudette` CLI commands must also go through the relay:",
+            "",
+            "```bash",
+            f"cat > {relay_dir}/requests/mem1.json.tmp << 'REQEOF'",
+            '{"id": "mem1", "command": "claudette memory search \\"auth bug\\"",',
+            f' "cwd": "{config.project_dir}", "timeout": 30}}',
+            "REQEOF",
+            f"mv {relay_dir}/requests/mem1.json.tmp {relay_dir}/requests/mem1.json",
+            "```",
+            "",
+            "Useful claudette commands:",
+            '- `claudette memory search "<query>"` — find related past work',
+            "- `claudette queue --ready` — see what's ready to work on",
+            "- `claudette why <issue-ref>` — explain why an issue is blocked",
+            "- `claudette ready <issue-ref>` / `claudette block <issue-ref>` — update issue status",
+            '- `claudette issue create "<title>" --body "<body>"` — file a follow-up issue',
+        ]
+    )
 
     return "\n".join(lines)
 

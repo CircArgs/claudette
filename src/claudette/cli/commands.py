@@ -100,8 +100,7 @@ def cmd_update(config: Config) -> None:
     console.print("[green]✓[/green] AGENTS.md regenerated")
 
     # 2. Reinstall skills
-    relay_on = config.relay.enabled
-    installed = install_skills(config.project_dir, scope="manager", relay_enabled=relay_on)
+    installed = install_skills(config.project_dir, scope="manager")
     console.print(f"[green]✓[/green] Skills installed: {', '.join(installed)}")
 
     # 3. Ensure labels exist on GitHub

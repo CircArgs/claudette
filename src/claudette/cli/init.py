@@ -124,7 +124,7 @@ def run_init(project_dir: Path) -> None:
 
     # Install Claude Code skills
     try:
-        installed = install_skills(project_dir, scope="manager", relay_enabled=relay_config.enabled)
+        installed = install_skills(project_dir, scope="manager")
         if installed:
             console.print(f"[green]Installed skills:[/green] {', '.join(installed)}")
     except Exception as e:

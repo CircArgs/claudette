@@ -160,96 +160,16 @@ claudette log --repo owner/repo --issue 42 --level warning
 }
 
 
-RELAY_SKILLS: dict[str, str] = {
-    "claudette-relay": """\
----
-name: claudette-relay
-description: ALL command execution MUST go through the relay. You do not have direct shell access. Write JSON request files to run commands or spawn subagents — the relay watchdog executes them on your behalf.
-argument-hint: (file-based IPC)
----
-
-# claudette relay — MANDATORY command execution interface
-
-**You do NOT have direct shell access. ALL commands MUST go through the relay.**
-
-Do NOT use subprocess, os.system, or run shell commands directly — they will fail.
-A watchdog process runs outside the sandbox and executes requests on your behalf.
-
-## Running a command
-
-1. Write a request file (write to .tmp first, then rename for atomicity):
-```bash
-# Write to temp file first
-cat > .claudette/relay/requests/mycmd.json.tmp << 'REQEOF'
-{"id": "mycmd", "command": "git status", "cwd": "/path/to/repo", "timeout": 30}
-REQEOF
-mv .claudette/relay/requests/mycmd.json.tmp .claudette/relay/requests/mycmd.json
-```
-
-2. Poll for the response:
-```bash
-cat .claudette/relay/responses/mycmd.json
-# {"id": "mycmd", "returncode": 0, "stdout": "...", "stderr": "...", "timed_out": false, "error": null}
-```
-
-## Spawning a subagent
-
-For tasks that need a full Claude session (not just a shell command):
-
-1. Write a subagent request:
-```bash
-cat > .claudette/relay/subagents/requests/worker1.json.tmp << 'REQEOF'
-{"id": "worker1", "prompt": "Implement the auth middleware in src/auth.py. Write tests.", "cwd": "/path/to/worktree", "timeout": 1800, "print_mode": false}
-REQEOF
-mv .claudette/relay/subagents/requests/worker1.json.tmp .claudette/relay/subagents/requests/worker1.json
-```
-
-2. Poll for status (updates from pending → running → completed/failed):
-```bash
-cat .claudette/relay/subagents/responses/worker1.json
-# {"id": "worker1", "status": "running", "pid": 12345, "output": "", "error": null}
-# ... later ...
-# {"id": "worker1", "status": "completed", "pid": 12345, "output": "...", "error": null}
-```
-
-### Fields
-
-**Request:**
-- `id` — unique identifier
-- `prompt` — the prompt for the subagent
-- `cwd` — working directory (typically a worktree)
-- `timeout` — max seconds (default 1800 / 30 min)
-- `print_mode` — `true` for one-shot `claude --print`, `false` for full session
-
-**Response:**
-- `status` — `pending`, `running`, `completed`, `failed`, `timed_out`
-- `pid` — process ID (once running)
-- `output` — stdout from the session (once completed)
-- `error` — error message (if failed)
-
-## Important
-
-- **ALL commands go through the relay — no exceptions.** Never run commands directly.
-- Always write to `.tmp` first, then rename — prevents the watchdog from reading partial files
-- The watchdog validates commands against an allowlist before executing
-- Subagent sessions run as full `claude` CLI invocations
-""",
-}
-
-
-def install_skills(
-    project_dir: Path, scope: str = "worker", relay_enabled: bool = False
-) -> list[str]:
+def install_skills(project_dir: Path, scope: str = "worker") -> list[str]:
     """Install skills into <project_dir>/.claude/skills/.
 
     scope:
       "worker" — only worker-scoped skills (for worktree .claude/)
       "manager" — worker + manager skills (for project root .claude/)
-      "all" — worker + manager + relay (legacy, same as manager + relay)
+      "all" — worker + manager skills
 
-    relay_enabled:
-      When True, relay skills are installed regardless of scope — ALL Claude
-      instances must use the relay when it's enabled.
+    Relay instructions are NOT installed as skills — they live in AGENTS.md
+    so they're always active without requiring explicit invocation.
     """
     skills_dir = project_dir / ".claude" / "skills"
     skills: dict[str, str] = {}
@@ -257,8 +177,6 @@ def install_skills(
     skills.update(WORKER_SKILLS)
     if scope in ("manager", "all"):
         skills.update(MANAGER_SKILLS)
-    if relay_enabled or scope in ("relay", "all"):
-        skills.update(RELAY_SKILLS)
 
     installed = []
     for name, content in skills.items():
