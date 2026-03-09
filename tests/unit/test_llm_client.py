@@ -30,7 +30,8 @@ class TestRunClaude:
 
         cmd = mock_run.call_args[0][0]
         assert cmd[0] == "claude"
-        assert "--print" in cmd
+        assert "-p" in cmd
+        assert "some thread content" in cmd
 
     def test_claude_cli_failure_raises(self):
         client = ClaudeCLIClient()
@@ -58,9 +59,8 @@ class TestLaunchManagerSession:
         assert proc.pid == 12345
         cmd = mock_popen.call_args[0][0]
         assert cmd[0] == "claude"
-        assert "--prompt" in cmd
+        assert "-p" in cmd
         assert "work on issues" in cmd
-        assert "--print" not in cmd  # Session mode, not one-shot
         assert mock_popen.call_args[1]["cwd"] == "/tmp/workspace"
 
     def test_launch_session_detached(self):

@@ -18,8 +18,7 @@ class ClaudeCLIClient:
     """LLMClient that shells out to `claude` CLI for all inference.
 
     No API keys needed — just a configured `claude` CLI installation.
-    Uses `claude --print` for non-interactive one-shot prompts (summarizer).
-    Uses `claude` (interactive session) for the manager session with sub-agents.
+    Uses `claude -p` (print mode) for all invocations since there's no TTY.
     """
 
     CLAUDE_CMD = "claude"
@@ -48,7 +47,7 @@ class ClaudeCLIClient:
 
     def _run_claude(self, prompt: str) -> str:
         """Run claude CLI in one-shot mode and return the output."""
-        cmd = [self.CLAUDE_CMD, "--print", "--prompt", prompt]
+        cmd = [self.CLAUDE_CMD, "-p", prompt]
 
         result = subprocess.run(
             cmd,
@@ -76,10 +75,7 @@ class ClaudeCLIClient:
         cwd: str,
         log_path: str | None = None,
     ) -> subprocess.Popen:
-        """Launch a full claude code + sub-agents manager session in the background.
-
-        The session runs as an interactive claude process (not --print) so it
-        can use sub-agents to fan out work to sub-agents.
+        """Launch a claude -p manager session in the background.
 
         Args:
             prompt: The manager prompt describing all ready issues.
@@ -88,7 +84,7 @@ class ClaudeCLIClient:
 
         Returns the Popen handle for tracking.
         """
-        cmd = [self.CLAUDE_CMD, "--prompt", prompt]
+        cmd = [self.CLAUDE_CMD, "-p", "--dangerously-skip-permissions", prompt]
 
         if log_path:
             log_file = open(log_path, "w")  # noqa: SIM115 — outlives this scope

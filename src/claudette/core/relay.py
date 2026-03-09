@@ -328,12 +328,9 @@ class RelayWatchdog:
             )
             return
 
-        # Build claude command — prompt is a positional arg, not --prompt
-        if request.print_mode:
-            cmd = ["claude", "--print", request.prompt]
-        else:
-            # Full session mode — no TTY, so skip permission prompts
-            cmd = ["claude", "--dangerously-skip-permissions", request.prompt]
+        # Build claude command — always use -p (--print) since there's no TTY.
+        # --dangerously-skip-permissions avoids interactive permission prompts.
+        cmd = ["claude", "-p", "--dangerously-skip-permissions", request.prompt]
 
         logger.info(
             "Launching subagent %s (cwd=%s, print=%s)", request.id, request.cwd, request.print_mode
