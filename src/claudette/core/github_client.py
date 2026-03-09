@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import time
 from datetime import UTC, datetime
+from pathlib import Path
 
 import httpx
 
@@ -51,6 +53,15 @@ def _parse_comment(data: dict) -> Comment:
     )
 
 
+def _ssl_context() -> bool | str:
+    """Return SSL verification setting, respecting corporate CA bundles."""
+    for env_var in ("REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "SSL_CERT_FILE"):
+        ca_path = os.environ.get(env_var)
+        if ca_path and Path(ca_path).exists():
+            return ca_path
+    return True
+
+
 class LiveGitHubClient:
     """Production GitHubClient backed by httpx."""
 
@@ -64,6 +75,7 @@ class LiveGitHubClient:
                 "X-GitHub-Api-Version": "2022-11-28",
             },
             timeout=30.0,
+            verify=_ssl_context(),
         )
 
     # ------------------------------------------------------------------

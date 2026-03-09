@@ -70,15 +70,24 @@ def validate_command(cmd: str, relay_config: RelayConfig) -> str | None:
         if re.search(pattern, cmd):
             return f"Blocked by pattern: {pattern}"
 
-    # Allowlist check
+    # Allowlist check — each entry is a prefix (e.g. "git " matches "git status")
+    # or an exact command name (e.g. "claudette" matches "claudette tick --dry-run")
     if relay_config.allowed_commands:
-        cmd_name = cmd.split()[0] if cmd.split() else ""
-        allowed_names = [p.strip() for p in relay_config.allowed_commands]
-        if not any(
-            cmd_name == name or cmd.startswith(p)
-            for name, p in zip(allowed_names, relay_config.allowed_commands, strict=False)
-        ):
-            return f"Command not in allowlist. Allowed: {', '.join(allowed_names)}"
+        cmd_stripped = cmd.strip()
+        cmd_name = cmd_stripped.split()[0] if cmd_stripped else ""
+        allowed = False
+        for prefix in relay_config.allowed_commands:
+            p = prefix.strip()
+            if not p:
+                continue
+            # If the prefix ends with a space, it's a prefix match
+            # Otherwise match exact command name or as a prefix
+            if cmd_stripped.startswith(p) or cmd_name == p:
+                allowed = True
+                break
+        if not allowed:
+            names = [p.strip() for p in relay_config.allowed_commands if p.strip()]
+            return f"Command not in allowlist. Allowed: {', '.join(names)}"
 
     return None
 
