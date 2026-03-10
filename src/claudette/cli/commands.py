@@ -137,6 +137,7 @@ def cmd_status(config: Config) -> None:
 
     # Last tick
     last_tick = "never"
+    last_tick_ts = None
     for repo in config.repositories:
         safe = repo.name.replace("/", "_")
         cursor = state / f"{safe}_sync.txt"
@@ -145,10 +146,31 @@ def cmd_status(config: Config) -> None:
                 ts = datetime.fromisoformat(cursor.read_text().strip())
                 ago = (datetime.now(UTC) - ts).total_seconds()
                 last_tick = f"{int(ago)}s ago" if ago < 60 else f"{int(ago // 60)}m ago"
+                last_tick_ts = ts
             except ValueError:
                 pass
-    interval = config.system.polling_interval_minutes
-    console.print(f"last tick: {last_tick}  next: ~{interval}m")
+
+    # Next tick
+    from claudette.core.bootstrap import get_cron_status
+
+    cron_line = get_cron_status(config)
+    if cron_line and last_tick_ts is not None:
+        interval_secs = config.system.polling_interval_minutes * 60
+        next_at = last_tick_ts.timestamp() + interval_secs
+        remaining = next_at - datetime.now(UTC).timestamp()
+        if remaining <= 0:
+            next_tick = "overdue"
+        elif remaining < 60:
+            next_tick = f"{int(remaining)}s"
+        else:
+            mins = int(remaining // 60)
+            secs = int(remaining % 60)
+            next_tick = f"{mins}m {secs}s"
+        console.print(f"last tick: {last_tick}  next: {next_tick}")
+    elif cron_line:
+        console.print(f"last tick: {last_tick}  next: ≤{config.system.polling_interval_minutes}m")
+    else:
+        console.print(f"last tick: {last_tick}  next: [dim]cron not installed[/dim]")
     console.print()
 
     # Session
