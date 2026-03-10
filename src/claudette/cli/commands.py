@@ -224,16 +224,25 @@ def cmd_status(config: Config) -> None:
         ready = []
         blocked = []
         waiting = []
-        prs = []
+        untriaged = []
+        prs_review = []  # PRs that will be auto-reviewed
+        prs_waiting = []  # PRs waiting for labels/action
 
         routing = config.github.routing
+        auto_review = config.deterministic_rules.auto_review_new_prs
         for key, issue in graph.nodes.items():
             if issue.state == "closed":
                 continue
             if any(lbl in issue.labels for lbl in routing.ignore_labels):
                 continue
+
             if issue.is_pull_request:
-                prs.append((key, issue))
+                if _label_match(issue.labels, labels.needs_review):
+                    prs_review.append((key, issue, "needs review"))
+                elif auto_review and not _label_match(issue.labels, labels.in_progress):
+                    prs_review.append((key, issue, "will auto-flag for review"))
+                else:
+                    prs_waiting.append((key, issue))
             elif key in session_issues or _label_match(issue.labels, labels.in_progress):
                 working.append((key, issue))
             elif key in blocked_map:
@@ -244,7 +253,7 @@ def cmd_status(config: Config) -> None:
             elif routing.require_ready_label and not _label_match(
                 issue.labels, labels.ready_for_dev
             ):
-                continue  # not triaged — skip
+                untriaged.append((key, issue))
             else:
                 ready.append((key, issue))
 
@@ -256,7 +265,7 @@ def cmd_status(config: Config) -> None:
                 key, issue = item[0], item[1]
                 line = f"  {key:<35} {issue.title[:50]}"
                 if len(item) > 2:
-                    line += f"\n  {'':35} [dim]blocked by {item[2]}[/dim]"
+                    line += f"\n  {'':35} [dim]{item[2]}[/dim]"
                 console.print(line)
             console.print()
 
@@ -264,9 +273,16 @@ def cmd_status(config: Config) -> None:
         _print_section("WAITING ON YOU", "◆", "yellow", waiting)
         _print_section("BLOCKED", "■", "red", blocked)
         _print_section("READY", "●", "green", ready)
-        _print_section("PULL REQUESTS", "⎇", "magenta", prs)
+        _print_section("PULL REQUESTS", "⎇", "magenta", prs_review)
+        _print_section("PRs (no action)", "⎇", "dim", prs_waiting)
+        _print_section(
+            f"UNTRIAGED (need `{_primary_label(labels.ready_for_dev)}` label)",
+            "○",
+            "dim",
+            untriaged,
+        )
 
-        if not any([working, waiting, blocked, ready, prs]):
+        if not any([working, waiting, blocked, ready, prs_review, prs_waiting, untriaged]):
             console.print("[dim]No open issues.[/dim]")
 
     except Exception as e:
