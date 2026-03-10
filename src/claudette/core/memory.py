@@ -60,7 +60,17 @@ class MemoryIndex:
     @property
     def model(self):
         if self._model is None:
+            import os
+
             from model2vec import StaticModel
+
+            # Propagate corporate CA bundles so huggingface_hub/requests can find them
+            for env_var in ("REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "SSL_CERT_FILE"):
+                ca_path = os.environ.get(env_var)
+                if ca_path and os.path.exists(ca_path):
+                    os.environ.setdefault("REQUESTS_CA_BUNDLE", ca_path)
+                    os.environ.setdefault("CURL_CA_BUNDLE", ca_path)
+                    break
 
             self._model = StaticModel.from_pretrained(MODEL_NAME)
         return self._model
