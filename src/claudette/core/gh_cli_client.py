@@ -30,16 +30,18 @@ def _gh_api(
     if paginate:
         cmd.append("--paginate")
 
-    # Add query parameters as -f key=value
+    # Query params go in the URL (NOT -f, which sends body fields)
+    url = endpoint
     if params:
-        for key, value in params.items():
-            cmd.extend(["-f", f"{key}={value}"])
+        from urllib.parse import urlencode
 
-    # Add JSON body
+        url = f"{endpoint}?{urlencode(params)}"
+
+    # Add JSON body for POST/PATCH/PUT
     if body:
         cmd.extend(["--input", "-"])
 
-    cmd.append(endpoint)
+    cmd.append(url)
 
     input_data = json.dumps(body) if body else None
     result = subprocess.run(
