@@ -269,14 +269,20 @@ def cmd_status(config: Config) -> None:
                 console.print(line)
             console.print()
 
-        _print_section("WORKING", "◉", "blue", working)
-        _print_section("WAITING ON YOU", "◆", "yellow", waiting)
-        _print_section("BLOCKED", "■", "red", blocked)
-        _print_section("READY", "●", "green", ready)
-        _print_section("PULL REQUESTS", "⎇", "magenta", prs_review)
+        lbl_ip = _primary_label(labels.in_progress) or ""
+        lbl_wait = _primary_label(labels.waiting_on_user) or ""
+        lbl_block = _primary_label(labels.blocked) or ""
+        lbl_ready = _primary_label(labels.ready_for_dev) or ""
+        lbl_review = _primary_label(labels.needs_review) or ""
+
+        _print_section(f"WORKING ({lbl_ip})", "◉", "blue", working)
+        _print_section(f"WAITING ON YOU ({lbl_wait})", "◆", "yellow", waiting)
+        _print_section(f"BLOCKED ({lbl_block})", "■", "red", blocked)
+        _print_section(f"READY ({lbl_ready})", "●", "green", ready)
+        _print_section(f"PULL REQUESTS ({lbl_review})", "⎇", "magenta", prs_review)
         _print_section("PRs (no action)", "⎇", "dim", prs_waiting)
         _print_section(
-            f"UNTRIAGED (need `{_primary_label(labels.ready_for_dev)}` label)",
+            f"UNTRIAGED (need `{lbl_ready}` label)",
             "○",
             "dim",
             untriaged,
