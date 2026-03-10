@@ -568,19 +568,23 @@ def _ensure_labels(config: Config) -> None:
                 return
 
 
-def install_cron(config: Config, script_path: str = "claudette tick") -> None:
-    """Install a cron entry for periodic ticking."""
-    project_flag = f"--project {config.project_dir}"
-    full_cmd = f"{script_path} {project_flag}"
+def _cron_marker(config: Config) -> str:
+    """Return the string that identifies this project's cron entry."""
+    return f"claudette tick --project {config.project_dir}"
+
+
+def install_cron(config: Config) -> str | None:
+    """Install a cron entry for periodic ticking. Returns the cron line or None on error."""
+    marker = _cron_marker(config)
     interval = config.system.polling_interval_minutes
-    cron_line = f"*/{interval} * * * * cd {config.project_dir} && {full_cmd}\n"
+    cron_line = f"*/{interval} * * * * cd {config.project_dir} && {marker}\n"
 
     result = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
     existing = result.stdout if result.returncode == 0 else ""
 
-    if full_cmd in existing:
+    if marker in existing:
         logger.info("Cron entry already exists")
-        return
+        return cron_line.strip()
 
     new_crontab = existing.rstrip("\n") + "\n" + cron_line
     proc = subprocess.run(
@@ -591,5 +595,47 @@ def install_cron(config: Config, script_path: str = "claudette tick") -> None:
     )
     if proc.returncode == 0:
         logger.info("Installed cron: %s", cron_line.strip())
-    else:
-        logger.error("Failed to install cron: %s", proc.stderr)
+        return cron_line.strip()
+    logger.error("Failed to install cron: %s", proc.stderr)
+    return None
+
+
+def remove_cron(config: Config) -> bool:
+    """Remove the cron entry for this project. Returns True if removed."""
+    marker = _cron_marker(config)
+
+    result = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
+    if result.returncode != 0:
+        return False
+
+    lines = result.stdout.splitlines()
+    filtered = [line for line in lines if marker not in line]
+
+    if len(filtered) == len(lines):
+        logger.info("No cron entry found for this project")
+        return False
+
+    new_crontab = "\n".join(filtered) + "\n"
+    proc = subprocess.run(
+        ["crontab", "-"],
+        input=new_crontab,
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode == 0:
+        logger.info("Removed cron entry")
+        return True
+    logger.error("Failed to remove cron: %s", proc.stderr)
+    return False
+
+
+def get_cron_status(config: Config) -> str | None:
+    """Return the current cron line for this project, or None if not installed."""
+    marker = _cron_marker(config)
+    result = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
+    if result.returncode != 0:
+        return None
+    for line in result.stdout.splitlines():
+        if marker in line:
+            return line.strip()
+    return None

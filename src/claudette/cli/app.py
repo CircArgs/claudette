@@ -406,6 +406,56 @@ def repo_remove(ctx: click.Context, name: str) -> None:
     cmd_repo_remove(config, name)
 
 
+# ── Cron commands ─────────────────────────────────────────────────────────
+
+
+@main.group(name="cron")
+def cron_group() -> None:
+    """Manage the automatic polling cron job."""
+    pass
+
+
+@cron_group.command(name="on")
+@click.pass_context
+def cron_on(ctx: click.Context) -> None:
+    """Install the cron job to run ticks automatically."""
+    from claudette.core.bootstrap import install_cron
+
+    config = load_config(ctx)
+    result = install_cron(config)
+    if result:
+        click.echo(f"Cron installed: {result}")
+    else:
+        click.echo("Failed to install cron", err=True)
+
+
+@cron_group.command(name="off")
+@click.pass_context
+def cron_off(ctx: click.Context) -> None:
+    """Remove the cron job."""
+    from claudette.core.bootstrap import remove_cron
+
+    config = load_config(ctx)
+    if remove_cron(config):
+        click.echo("Cron removed")
+    else:
+        click.echo("No cron entry found for this project")
+
+
+@cron_group.command(name="status")
+@click.pass_context
+def cron_status(ctx: click.Context) -> None:
+    """Show whether the cron job is installed."""
+    from claudette.core.bootstrap import get_cron_status
+
+    config = load_config(ctx)
+    line = get_cron_status(config)
+    if line:
+        click.echo(f"Active: {line}")
+    else:
+        click.echo("Not installed. Run `claudette cron on` to enable.")
+
+
 # ── Relay commands ────────────────────────────────────────────────────────
 
 

@@ -316,6 +316,7 @@ Commands are validated against an allowlist and blocklist defined in config. The
 | `claudette config set <key> <value>` | Update a config value |
 | `claudette repo add <name> [--path P] [--branch B]` | Add a repo to this project |
 | `claudette repo remove <name>` | Remove a repo from config |
+| `claudette cron on\|off\|status` | Manage the automatic polling cron job |
 | `claudette relay start\|stop\|status` | Manage the command relay watchdog |
 | `claudette memory sync\|search\|status\|clear` | Manage the semantic memory index |
 
