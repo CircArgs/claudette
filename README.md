@@ -42,7 +42,13 @@ claudette -- status at a glance
 ### Install
 
 ```bash
-# With uv (recommended)
+# One-liner (auto-detects uv/pipx/pip)
+curl -sSL https://raw.githubusercontent.com/CircArgs/claudette/main/install.sh | bash
+
+# With search extras (for memory index)
+curl -sSL https://raw.githubusercontent.com/CircArgs/claudette/main/install.sh | bash -s -- --search
+
+# Or manually with uv
 uv tool install git+https://github.com/CircArgs/claudette.git
 
 # Or with pip
@@ -123,6 +129,9 @@ repositories:
       pause_on_budget_exceeded: true
   - name: owner/backend-api
     default_branch: main
+
+memory:
+  backend: hybrid  # dense | bm25 | hybrid
 
 llm:
   manager_prompt: manager.jinja2
@@ -268,7 +277,13 @@ Each unit of work gets its own git worktree under `<project-dir>/.claudette/work
 
 ### Semantic memory
 
-Claudette maintains a local embedding index over all GitHub issues and PRs using [model2vec](https://github.com/MinishLab/model2vec) (potion-base-8M, ~8 MB). Embeddings are stored incrementally (sqlite + numpy). The manager session searches memory before starting each issue to find related past work.
+Claudette maintains a local search index over all GitHub issues and PRs. Three search backends are available (chosen during `claudette init`):
+
+| Backend | Library | Description | Install |
+|---|---|---|---|
+| `dense` | [model2vec](https://github.com/MinishLab/model2vec) (potion-base-8M, ~8 MB) | Semantic similarity via embeddings | `pip install claudette[dense]` |
+| `bm25` | [bm25s](https://github.com/xhluca/bm25s) | Fast keyword search, no model download | `pip install claudette[bm25]` |
+| `hybrid` | Both | Combined via reciprocal rank fusion (best results) | `pip install claudette[search]` |
 
 ```bash
 claudette memory sync                          # index all issues/PRs
@@ -296,7 +311,8 @@ Commands are validated against an allowlist and blocklist defined in config. The
 |---|---|
 | `claudette` | System status (same as `claudette status`) |
 | `claudette init <project-dir>` | Initialize a project -- discover repos, bootstrap config, install cron |
-| `claudette update` | Regenerate AGENTS.md, skills, labels, and prompts from current config |
+| `claudette update` | Self-update claudette to the latest version |
+| `claudette refresh` | Regenerate AGENTS.md, skills, labels, and prompts from current config |
 | `claudette list` | List all registered projects |
 | `claudette status` | System health at a glance |
 | `claudette watch [-n SECS]` | Refresh status on a loop (default: every 5s) |

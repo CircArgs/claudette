@@ -296,14 +296,22 @@ def issue_depends(ctx: click.Context, issue_ref: str, on_ref: str) -> None:
 
 @main.command()
 @click.pass_context
-def update(ctx: click.Context) -> None:
+def refresh(ctx: click.Context) -> None:
     """Regenerate AGENTS.md, skills, labels, and prompts from current config.
 
     Run this after editing config.yaml to apply changes.
     """
+    from claudette.cli.commands import cmd_refresh
+
+    cmd_refresh(load_config(ctx))
+
+
+@main.command()
+def update() -> None:
+    """Self-update claudette to the latest version from GitHub."""
     from claudette.cli.commands import cmd_update
 
-    cmd_update(load_config(ctx))
+    cmd_update()
 
 
 @main.command(name="init")

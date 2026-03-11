@@ -19,6 +19,7 @@ from claudette.core.config import (
     Config,
     GitHubConfig,
     LabelConfig,
+    MemoryConfig,
     RelayConfig,
     RepoConfig,
     RoutingConfig,
@@ -98,12 +99,15 @@ def run_init(project_dir: Path) -> None:
     label_config = _configure_labels()
     routing = _configure_routing(label_config)
 
-    # Phase 3c: Relay (for sandboxed environments)
+    # Phase 3c: Memory backend
+    memory_config = _configure_memory()
+
+    # Phase 3d: Relay (for sandboxed environments)
     relay_config = _configure_relay()
 
     # Phase 4: Confirm and bootstrap
     console.print()
-    _show_summary(project_dir, repos, system, routing, label_config, relay_config)
+    _show_summary(project_dir, repos, system, routing, label_config, memory_config, relay_config)
 
     if not questionary.confirm("\nProceed with setup?", default=True).ask():
         raise SystemExit(0)
@@ -113,6 +117,7 @@ def run_init(project_dir: Path) -> None:
         system=system,
         repositories=repos,
         github=GitHubConfig(labels=label_config, routing=routing),
+        memory=memory_config,
         relay=relay_config,
     )
 
@@ -311,6 +316,61 @@ def _configure_routing(label_config: LabelConfig) -> RoutingConfig:
     )
 
 
+_BACKEND_DESCRIPTIONS = {
+    "dense": "Semantic (model2vec) — best for meaning-based search, requires model download (~8MB)",
+    "bm25": "Keyword (BM25) — fast exact keyword matching, no model download needed",
+    "hybrid": "Hybrid (both) — combines semantic + keyword search for best results",
+}
+
+
+def _configure_memory() -> MemoryConfig:
+    """Prompt for memory search backend."""
+    from claudette.core.memory import available_backends
+
+    console.print("\n[bold]Memory search[/bold]\n")
+    console.print("  Claudette indexes issues/PRs for semantic search.")
+    console.print("  Choose a search backend based on your environment:\n")
+
+    installed = available_backends()
+
+    if not installed:
+        console.print("  [yellow]No search backends installed.[/yellow]")
+        console.print("  Install one:")
+        console.print("    pip install claudette[dense]   # model2vec embeddings")
+        console.print("    pip install claudette[bm25]    # BM25 keyword search")
+        console.print("    pip install claudette[search]  # both (hybrid)\n")
+        console.print("  [dim]Defaulting to 'dense' — install model2vec before first sync.[/dim]")
+        return MemoryConfig(backend="dense")
+
+    choices = []
+    for backend in ["dense", "bm25", "hybrid"]:
+        desc = _BACKEND_DESCRIPTIONS[backend]
+        if backend in installed:
+            choices.append(questionary.Choice(title=f"{backend} — {desc}", value=backend))
+        else:
+            choices.append(
+                questionary.Choice(
+                    title=f"{backend} — {desc} [not installed]",
+                    value=backend,
+                    disabled="missing dependencies",
+                )
+            )
+
+    # Default to the best available
+    default = "hybrid" if "hybrid" in installed else installed[0]
+
+    selected = questionary.select(
+        "Search backend:",
+        choices=choices,
+        default=default,
+    ).ask()
+
+    if selected is None:
+        raise SystemExit(0)
+
+    return MemoryConfig(backend=selected)
+
+
 def _configure_relay() -> RelayConfig:
     """Prompt for relay configuration."""
     console.print("\n[bold]Command relay[/bold]\n")
@@ -343,6 +403,7 @@ def _show_summary(
     system: SystemConfig,
     routing: RoutingConfig | None = None,
     label_config: LabelConfig | None = None,
+    memory_config: MemoryConfig | None = None,
     relay_config: RelayConfig | None = None,
 ) -> None:
     """Show what we're about to set up."""
@@ -350,6 +411,8 @@ def _show_summary(
     console.print(f"  Project: [cyan]{project_dir}[/cyan]")
     console.print(f"  Polling: every {system.polling_interval_minutes}m")
     console.print(f"  Timeout: {system.session_timeout_minutes}m")
+    if memory_config:
+        console.print(f"  Search:  {memory_config.backend}")
     if routing:
         mode = "require 'ready-for-dev' label" if routing.require_ready_label else "all open issues"
         console.print(f"  Routing: {mode}")

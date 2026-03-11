@@ -467,7 +467,7 @@ def _sync_memory(config: Config, issues: list, phase: str) -> None:
     try:
         from claudette.core.memory import MemoryIndex
 
-        memory = MemoryIndex(config.memory_dir)
+        memory = MemoryIndex(config.memory_dir, backend=config.memory.backend)
         stats = memory.sync(issues)
         logger.info(
             "Memory %s-sync: +%d updated=%d total=%d",

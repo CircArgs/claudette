@@ -90,7 +90,7 @@ BANNER = """\
 """
 
 
-def cmd_update(config: Config) -> None:
+def cmd_refresh(config: Config) -> None:
     """Regenerate all derived files from current config."""
     from claudette.core.bootstrap import _ensure_labels, regenerate_agents_md
     from claudette.core.skills import install_skills
@@ -116,7 +116,40 @@ def cmd_update(config: Config) -> None:
     _copy_default_prompts(config.prompts_dir)
     console.print("[green]✓[/green] Prompt templates updated")
 
-    console.print("\n[bold]Project updated.[/bold]")
+    console.print("\n[bold]Project refreshed.[/bold]")
+
+
+def cmd_update() -> None:
+    """Self-update claudette to the latest version."""
+    import shutil
+    import subprocess
+
+    repo = "git+https://github.com/CircArgs/claudette.git"
+
+    # Detect installer
+    if shutil.which("uv"):
+        installer = "uv"
+        cmd = ["uv", "tool", "install", "--force", repo]
+    elif shutil.which("pipx"):
+        installer = "pipx"
+        cmd = ["pipx", "install", "--force", f"claudette @ {repo}"]
+    elif shutil.which("pip"):
+        installer = "pip"
+        cmd = ["pip", "install", "--upgrade", f"claudette @ {repo}"]
+    elif shutil.which("pip3"):
+        installer = "pip3"
+        cmd = ["pip3", "install", "--upgrade", f"claudette @ {repo}"]
+    else:
+        console.print("[red]No package installer found (uv, pipx, or pip).[/red]")
+        raise SystemExit(1)
+
+    console.print(f"Updating claudette via {installer}...")
+    result = subprocess.run(cmd, capture_output=False)
+    if result.returncode == 0:
+        console.print("[green]Updated successfully.[/green]")
+    else:
+        console.print("[red]Update failed.[/red]")
+        raise SystemExit(result.returncode)
 
 
 def cmd_status(config: Config) -> None:
@@ -1002,7 +1035,7 @@ def cmd_memory_sync(config: Config) -> None:
     from claudette.core.memory import MemoryIndex
 
     token = _require_token()
-    memory = MemoryIndex(config.memory_dir)
+    memory = MemoryIndex(config.memory_dir, backend=config.memory.backend)
 
     with console.status("Fetching issues and PRs..."):
         all_issues = _fetch_all_issues(config, token)
@@ -1021,7 +1054,7 @@ def cmd_memory_search(
 ) -> None:
     from claudette.core.memory import MemoryIndex
 
-    memory = MemoryIndex(config.memory_dir)
+    memory = MemoryIndex(config.memory_dir, backend=config.memory.backend)
     results = memory.search(query, limit=limit, state=state)
 
     if not results:
@@ -1047,10 +1080,11 @@ def cmd_memory_search(
 def cmd_memory_status(config: Config) -> None:
     from claudette.core.memory import MemoryIndex
 
-    memory = MemoryIndex(config.memory_dir)
+    memory = MemoryIndex(config.memory_dir, backend=config.memory.backend)
     stats = memory.stats()
 
     console.print("[bold]Memory Index[/bold]")
+    console.print(f"  Backend: {stats['backend']}")
     console.print(f"  Total indexed: {stats['total']}")
     console.print(f"  Open: {stats['open']}  PRs: {stats['prs']}")
     console.print(f"  Last sync: {stats['last_sync']}")
@@ -1061,6 +1095,6 @@ def cmd_memory_status(config: Config) -> None:
 def cmd_memory_clear(config: Config) -> None:
     from claudette.core.memory import MemoryIndex
 
-    memory = MemoryIndex(config.memory_dir)
+    memory = MemoryIndex(config.memory_dir, backend=config.memory.backend)
     memory.clear()
     console.print("[green]Memory index cleared.[/green]")

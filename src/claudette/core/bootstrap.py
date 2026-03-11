@@ -409,7 +409,7 @@ def _init_agent_instructions(config: Config) -> None:
 
 
 def regenerate_agents_md(config: Config) -> None:
-    """Force-regenerate AGENTS.md and ensure symlinks. Used by `claudette update`."""
+    """Force-regenerate AGENTS.md and ensure symlinks. Used by `claudette refresh`."""
     _write_agents_md(config)
     _ensure_agent_symlinks(config.project_dir)
 

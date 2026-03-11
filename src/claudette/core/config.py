@@ -94,6 +94,13 @@ class GitHubConfig(BaseModel):
     routing: RoutingConfig = Field(default_factory=RoutingConfig)
 
 
+class MemoryConfig(BaseModel):
+    """Search backend for the semantic memory index."""
+
+    # "dense" = model2vec only, "bm25" = BM25 only, "hybrid" = both with RRF
+    backend: str = "dense"
+
+
 class RelayConfig(BaseModel):
     enabled: bool = False
     subagents_enabled: bool = False
@@ -147,6 +154,7 @@ class Config(BaseModel):
     llm: LLMConfig = Field(default_factory=LLMConfig)
     github: GitHubConfig = Field(default_factory=GitHubConfig)
     deterministic_rules: DeterministicRulesConfig = Field(default_factory=DeterministicRulesConfig)
+    memory: MemoryConfig = Field(default_factory=MemoryConfig)
     relay: RelayConfig = Field(default_factory=RelayConfig)
     paused_repos: list[str] = Field(default_factory=list)
 
