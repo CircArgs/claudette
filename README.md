@@ -136,6 +136,9 @@ memory:
 llm:
   manager_prompt: manager.jinja2
   summarizer_prompt: summarizer.jinja2
+  cmd_one_shot: "claude -p {prompt}"               # one-shot inference
+  cmd_session: "claude -p --dangerously-skip-permissions {prompt}"  # manager
+  cmd_subagent: "claude -p --dangerously-skip-permissions {prompt}" # workers
 
 github:
   dependency_pattern: "Depends on\\s+(?:([\\w-]+/[\\w-]+))?#(\\d+)"
@@ -153,6 +156,7 @@ github:
     paused:
       - "system: paused"
   routing:
+    owner: your-github-username  # only pick up issues you created (blank = all)
     require_ready_label: true
     ignore_labels: []
 
@@ -203,12 +207,14 @@ Labels are defined at two levels: per-repo (under `repositories[].labels`) and g
 
 The `github.routing` section controls how claudette decides which issues to pick up:
 
+- **`owner`** (default: empty) — GitHub username. When set, claudette only picks up issues created by this user. Cross-user dependencies still work: if your issue depends on someone else's, claudette waits for it to close. Auto-detected during `claudette init`.
 - **`require_ready_label`** (default: `true`) — when true, issues must have the `ready_for_dev` label before claudette will work on them. When false, any open issue without a blocking label is considered ready.
 - **`ignore_labels`** — a list of labels that make claudette ignore issues entirely (it won't show or touch them).
 
 ```yaml
 github:
   routing:
+    owner: your-github-username
     require_ready_label: true
     ignore_labels:
       - "wontfix"

@@ -110,9 +110,15 @@ class MemoryIndex:
                     "model2vec is required for dense/hybrid search. "
                     "Install it: pip install claudette[dense]"
                 )
+            import logging
             import os
+            import warnings
 
             from model2vec import StaticModel
+
+            # Suppress "unauthenticated requests" noise from huggingface_hub
+            warnings.filterwarnings("ignore", message=".*unauthenticated.*")
+            logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
 
             # Propagate corporate CA bundles so huggingface_hub/requests can find them
             for env_var in ("REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "SSL_CERT_FILE"):

@@ -268,6 +268,8 @@ def cmd_status(config: Config) -> None:
                 continue
             if any(lbl in issue.labels for lbl in routing.ignore_labels):
                 continue
+            if routing.owner and issue.author != routing.owner:
+                continue
 
             if issue.is_pull_request:
                 if _label_match(issue.labels, labels.needs_review):

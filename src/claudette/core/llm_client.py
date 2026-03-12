@@ -1,7 +1,8 @@
-"""LLM client that uses the claude CLI for inference."""
+"""LLM client that uses a configurable CLI command for inference."""
 
 from __future__ import annotations
 
+import shlex
 import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -14,20 +15,38 @@ if TYPE_CHECKING:
     from claudette.core.config import LLMConfig
 
 
+def _build_cmd(template: str, prompt: str) -> list[str]:
+    """Build a command list from a template string, substituting {prompt}."""
+    # Replace {prompt} with a placeholder, split, then put prompt back
+    # This ensures the prompt is a single argument even if it has spaces
+    placeholder = "\x00PROMPT\x00"
+    filled = template.replace("{prompt}", placeholder)
+    parts = shlex.split(filled)
+    return [prompt if p == placeholder else p for p in parts]
+
+
 class ClaudeCLIClient:
-    """LLMClient that shells out to `claude` CLI for all inference.
+    """LLMClient that shells out to a CLI command for all inference.
 
-    No API keys needed — just a configured `claude` CLI installation.
-    Uses `claude -p` (print mode) for all invocations since there's no TTY.
+    Command templates are configurable via LLMConfig:
+      cmd_one_shot: for summarizer (one-shot, capture output)
+      cmd_session:  for manager (long-running, autonomous)
+      cmd_subagent: for worker agents in worktrees
     """
-
-    CLAUDE_CMD = "claude"
 
     def __init__(
         self, llm_config: LLMConfig | None = None, prompts_dir: Path | None = None
     ) -> None:
         self._summarizer_template = None
+        self._cmd_one_shot = "claude -p {prompt}"
+        self._cmd_session = "claude -p --dangerously-skip-permissions {prompt}"
+        self._cmd_subagent = "claude -p --dangerously-skip-permissions {prompt}"
+
         if llm_config:
+            self._cmd_one_shot = llm_config.cmd_one_shot
+            self._cmd_session = llm_config.cmd_session
+            self._cmd_subagent = llm_config.cmd_subagent
+
             template_name = llm_config.summarizer_prompt
             # Try project-local prompts first, then package defaults
             pkg_prompts = Path(__file__).parent.parent / "prompts"
@@ -45,9 +64,9 @@ class ClaudeCLIClient:
         )
         return env.get_template(resolved.name)
 
-    def _run_claude(self, prompt: str) -> str:
-        """Run claude CLI in one-shot mode and return the output."""
-        cmd = [self.CLAUDE_CMD, "-p", prompt]
+    def _run_one_shot(self, prompt: str) -> str:
+        """Run CLI in one-shot mode and return the output."""
+        cmd = _build_cmd(self._cmd_one_shot, prompt)
 
         result = subprocess.run(
             cmd,
@@ -58,15 +77,14 @@ class ClaudeCLIClient:
 
         if result.returncode != 0:
             raise RuntimeError(
-                f"claude CLI failed (exit {result.returncode}): {result.stderr[:500]}"
+                f"CLI command failed (exit {result.returncode}): {result.stderr[:500]}"
             )
 
         return result.stdout
 
     def summarize(self, thread: str) -> LLMResponse:
-        """Compress a GitHub thread using claude CLI (one-shot --print)."""
-        text = self._run_claude(thread)
-        # claude CLI doesn't report token counts
+        """Compress a GitHub thread using CLI (one-shot)."""
+        text = self._run_one_shot(thread)
         return LLMResponse(text=text, input_tokens=0, output_tokens=0)
 
     def launch_manager_session(
@@ -75,7 +93,7 @@ class ClaudeCLIClient:
         cwd: str,
         log_path: str | None = None,
     ) -> subprocess.Popen:
-        """Launch a claude -p manager session in the background.
+        """Launch a manager session in the background.
 
         Args:
             prompt: The manager prompt describing all ready issues.
@@ -84,7 +102,7 @@ class ClaudeCLIClient:
 
         Returns the Popen handle for tracking.
         """
-        cmd = [self.CLAUDE_CMD, "-p", "--dangerously-skip-permissions", prompt]
+        cmd = _build_cmd(self._cmd_session, prompt)
 
         if log_path:
             log_file = open(log_path, "w")  # noqa: SIM115 — outlives this scope
@@ -104,6 +122,11 @@ class ClaudeCLIClient:
                 start_new_session=True,
             )
         return proc
+
+    @property
+    def subagent_cmd_template(self) -> str:
+        """The command template for spawning subagents (used by relay)."""
+        return self._cmd_subagent
 
     def render_summarizer_prompt(self, **kwargs: object) -> str:
         if self._summarizer_template is None:

@@ -76,11 +76,22 @@ class RepoConfig(BaseModel):
 class LLMConfig(BaseModel):
     manager_prompt: str = "manager.jinja2"
     summarizer_prompt: str = "summarizer.jinja2"
+    # Command templates — {prompt} is replaced with the actual prompt text.
+    # one_shot: non-interactive single response (used for summarizer)
+    # session: long-running autonomous session (used for manager)
+    # subagent: worker agent in a worktree (used by relay)
+    cmd_one_shot: str = "claude -p {prompt}"
+    cmd_session: str = "claude -p --dangerously-skip-permissions {prompt}"
+    cmd_subagent: str = "claude -p --dangerously-skip-permissions {prompt}"
 
 
 class RoutingConfig(BaseModel):
     """Controls how claudette interprets issue labels for routing."""
 
+    # GitHub username of the operator. When set, only issues created by this user
+    # are picked up. Cross-user dependencies are respected (claudette waits for
+    # another user's blocking issue to close before scheduling yours).
+    owner: str = ""
     # If true, issues must have the ready_for_dev label to be picked up.
     # If false (default), any open issue without a blocking label is considered ready.
     require_ready_label: bool = True

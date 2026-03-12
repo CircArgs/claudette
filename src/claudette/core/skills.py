@@ -1,4 +1,4 @@
-"""Install claudette's Claude Code skills into the project's .claude/skills/.
+"""Install claudette's Claude Code skills into the project's .agents/skills/.
 
 Skills are scoped:
   - worker: available to worker sub-agents in worktrees
@@ -188,17 +188,17 @@ def get_cli_reference(scope: str = "manager") -> str:
 
 
 def install_skills(project_dir: Path, scope: str = "worker") -> list[str]:
-    """Install skills into <project_dir>/.claude/skills/.
+    """Install skills into <project_dir>/.agents/skills/.
 
     scope:
-      "worker" — only worker-scoped skills (for worktree .claude/)
-      "manager" — worker + manager skills (for project root .claude/)
+      "worker" — only worker-scoped skills (for worktree .agents/)
+      "manager" — worker + manager skills (for project root .agents/)
       "all" — worker + manager skills
 
     When relay is enabled, skip skill installation — all command docs
     are injected directly into AGENTS.md instead.
     """
-    skills_dir = project_dir / ".claude" / "skills"
+    skills_dir = project_dir / ".agents" / "skills"
     skills: dict[str, str] = {}
 
     skills.update(WORKER_SKILLS)

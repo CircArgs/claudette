@@ -20,6 +20,7 @@ class Issue:
     comments: list[Comment] = field(default_factory=list)
     reviews: list[Review] = field(default_factory=list)
     is_pull_request: bool = False
+    author: str = ""
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

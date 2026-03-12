@@ -328,9 +328,11 @@ class RelayWatchdog:
             )
             return
 
-        # Build claude command — always use -p (--print) since there's no TTY.
-        # --dangerously-skip-permissions avoids interactive permission prompts.
-        cmd = ["claude", "-p", "--dangerously-skip-permissions", request.prompt]
+        # Build command from config template
+        from claudette.core.llm_client import _build_cmd
+
+        cmd_template = self.config.llm.cmd_subagent
+        cmd = _build_cmd(cmd_template, request.prompt)
 
         logger.info(
             "Launching subagent %s (cwd=%s, print=%s)", request.id, request.cwd, request.print_mode

@@ -210,6 +210,10 @@ def _run_tick_locked(
         if any(lbl in issue.labels for lbl in routing.ignore_labels):
             continue
 
+        # Skip issues not owned by this user (when owner is set)
+        if routing.owner and issue.author != routing.owner:
+            continue
+
         # Deterministic: auto-flag new PRs needing review
         if (
             issue.is_pull_request

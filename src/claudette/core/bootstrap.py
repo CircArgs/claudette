@@ -444,8 +444,14 @@ git fetch origin
 git worktree add {worktree_dir}/<safe_name>-issue-<N> -b agent/<N>-<slug> origin/<branch>
 ```
 
-Dispatch each sub-agent into its own worktree. The sub-agent will pick up the repo's
-own AGENTS.md automatically. Clean up when done:
+After creating the worktree, link the project skills so the sub-agent has access:
+
+```bash
+ln -sf {config.project_dir}/.agents {worktree_dir}/<safe_name>-issue-<N>/.agents
+ln -sf .agents {worktree_dir}/<safe_name>-issue-<N>/.claude
+```
+
+Dispatch each sub-agent into its own worktree. Clean up when done:
 
 ```bash
 git worktree remove {worktree_dir}/<safe_name>-issue-<N>
@@ -495,7 +501,7 @@ _AGENT_SYMLINKS = [
 
 
 def _ensure_agent_symlinks(project_dir: Path) -> None:
-    """Create symlinks from tool-specific config files to AGENTS.md."""
+    """Create symlinks from tool-specific config files to AGENTS.md, and .claude → .agents."""
     agents_md = project_dir / "AGENTS.md"
     if not agents_md.exists():
         return
@@ -517,6 +523,45 @@ def _ensure_agent_symlinks(project_dir: Path) -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
         _make_relative_symlink(target, agents_md)
         logger.info("Created symlink: %s → AGENTS.md", rel_path)
+
+    # .agents/ is the canonical directory; .claude/ symlinks to it
+    _ensure_agents_dir_symlink(project_dir)
+
+
+def _ensure_agents_dir_symlink(project_dir: Path) -> None:
+    """Ensure .agents/ exists and .claude/ symlinks to it.
+
+    .agents/ is the cross-tool standard directory. Claude Code reads .claude/,
+    so we symlink it. If .claude/ already exists as a real directory, migrate
+    its contents into .agents/ first.
+    """
+    agents_dir = project_dir / ".agents"
+    claude_dir = project_dir / ".claude"
+
+    agents_dir.mkdir(parents=True, exist_ok=True)
+
+    if claude_dir.is_symlink():
+        # Already a symlink — verify it points to .agents
+        if claude_dir.resolve() != agents_dir.resolve():
+            claude_dir.unlink()
+            _make_relative_symlink(claude_dir, agents_dir)
+            logger.info("Updated symlink: .claude → .agents")
+        return
+
+    if claude_dir.is_dir():
+        # Migrate existing .claude/ contents into .agents/
+        import shutil
+
+        for item in claude_dir.iterdir():
+            dest = agents_dir / item.name
+            if not dest.exists():
+                shutil.move(str(item), str(dest))
+                logger.info("Migrated .claude/%s → .agents/%s", item.name, item.name)
+        shutil.rmtree(claude_dir)
+        logger.info("Removed old .claude/ directory after migration")
+
+    _make_relative_symlink(claude_dir, agents_dir)
+    logger.info("Created symlink: .claude → .agents")
 
 
 def _make_relative_symlink(link: Path, target: Path) -> None:
@@ -575,16 +620,24 @@ def _cron_marker(config: Config) -> str:
 
 def install_cron(config: Config) -> str | None:
     """Install a cron entry for periodic ticking. Returns the cron line or None on error."""
+    import shutil
+
     marker = _cron_marker(config)
     interval = config.system.polling_interval_minutes
-    cron_line = f"*/{interval} * * * * cd {config.project_dir} && {marker}\n"
+
+    # Use the full path to claudette so cron can find it regardless of PATH
+    claudette_bin = shutil.which("claudette") or "claudette"
+    cron_cmd = f"cd {config.project_dir} && {claudette_bin} tick --project {config.project_dir}"
+    cron_line = f"*/{interval} * * * * {cron_cmd}\n"
 
     result = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
     existing = result.stdout if result.returncode == 0 else ""
 
     if marker in existing:
-        logger.info("Cron entry already exists")
-        return cron_line.strip()
+        # Update existing entry (path may have changed after reinstall)
+        lines = existing.splitlines()
+        lines = [line for line in lines if marker not in line]
+        existing = "\n".join(lines)
 
     new_crontab = existing.rstrip("\n") + "\n" + cron_line
     proc = subprocess.run(

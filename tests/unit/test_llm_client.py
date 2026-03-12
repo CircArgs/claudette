@@ -41,7 +41,7 @@ class TestRunClaude:
             mock_run.return_value.stdout = ""
             mock_run.return_value.stderr = "Error: something went wrong"
 
-            with pytest.raises(RuntimeError, match="claude CLI failed"):
+            with pytest.raises(RuntimeError, match="CLI command failed"):
                 client.summarize("some thread")
 
 

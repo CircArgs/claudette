@@ -19,6 +19,7 @@ from claudette.core.config import (
     Config,
     GitHubConfig,
     LabelConfig,
+    LLMConfig,
     MemoryConfig,
     RelayConfig,
     RepoConfig,
@@ -99,15 +100,20 @@ def run_init(project_dir: Path) -> None:
     label_config = _configure_labels()
     routing = _configure_routing(label_config)
 
-    # Phase 3c: Memory backend
+    # Phase 3c: LLM command
+    llm_config = _configure_llm()
+
+    # Phase 3d: Memory backend
     memory_config = _configure_memory()
 
-    # Phase 3d: Relay (for sandboxed environments)
+    # Phase 3e: Relay (for sandboxed environments)
     relay_config = _configure_relay()
 
     # Phase 4: Confirm and bootstrap
     console.print()
-    _show_summary(project_dir, repos, system, routing, label_config, memory_config, relay_config)
+    _show_summary(
+        project_dir, repos, system, routing, label_config, llm_config, memory_config, relay_config
+    )
 
     if not questionary.confirm("\nProceed with setup?", default=True).ask():
         raise SystemExit(0)
@@ -116,6 +122,7 @@ def run_init(project_dir: Path) -> None:
         project_dir=project_dir,
         system=system,
         repositories=repos,
+        llm=llm_config,
         github=GitHubConfig(labels=label_config, routing=routing),
         memory=memory_config,
         relay=relay_config,
@@ -182,13 +189,18 @@ def _select_repos(discovered: list[dict]) -> list[RepoConfig]:
 
     repos = []
     for repo in selected:
-        repos.append(
-            build_repo_config(
-                repo["name"],
-                project_config=repo["config"] if repo["has_config"] else None,
-                repo_path=repo["path"],
-            )
+        rc = build_repo_config(
+            repo["name"],
+            project_config=repo["config"] if repo["has_config"] else None,
+            repo_path=repo["path"],
         )
+        # Let user override the auto-detected default branch
+        branch = questionary.text(
+            f"  {repo['name']} base branch:", default=rc.default_branch
+        ).ask()
+        if branch:
+            rc.default_branch = branch
+        repos.append(rc)
 
     return repos
 
@@ -286,11 +298,92 @@ def _configure_labels() -> LabelConfig:
     return LabelConfig(**result)
 
 
+def _configure_llm() -> LLMConfig:
+    """Prompt for LLM CLI command configuration."""
+    import shutil
+
+    console.print("\n[bold]LLM command[/bold]\n")
+
+    defaults = LLMConfig()
+
+    # Check if claude is available
+    has_claude = shutil.which("claude") is not None
+    if has_claude:
+        console.print("  [green]✓[/green] `claude` CLI found")
+    else:
+        console.print("  [yellow]![/yellow] `claude` CLI not found on PATH")
+
+    console.print("  Commands use [cyan]{prompt}[/cyan] as a placeholder for the prompt text.")
+    console.print(f"  Default: [dim]{defaults.cmd_one_shot}[/dim]\n")
+
+    if not questionary.confirm("Customize LLM commands?", default=not has_claude).ask():
+        return defaults
+
+    one_shot = questionary.text(
+        "One-shot command (summarizer):",
+        default=defaults.cmd_one_shot,
+    ).ask()
+
+    session = questionary.text(
+        "Session command (manager):",
+        default=defaults.cmd_session,
+    ).ask()
+
+    subagent = questionary.text(
+        "Subagent command (workers):",
+        default=defaults.cmd_subagent,
+    ).ask()
+
+    return LLMConfig(
+        cmd_one_shot=one_shot or defaults.cmd_one_shot,
+        cmd_session=session or defaults.cmd_session,
+        cmd_subagent=subagent or defaults.cmd_subagent,
+    )
+
+
+def _detect_github_user() -> str:
+    """Detect the current GitHub username via gh CLI."""
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["gh", "api", "user", "--jq", ".login"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    return ""
+
+
 def _configure_routing(label_config: LabelConfig) -> RoutingConfig:
     """Prompt for issue routing settings."""
     from claudette.core.config import _primary_label
 
     console.print("\n[bold]Issue routing[/bold]\n")
+
+    # Detect and confirm owner
+    detected_user = _detect_github_user()
+    if detected_user:
+        console.print(f"  Detected GitHub user: [cyan]{detected_user}[/cyan]")
+        console.print("  When set, claudette only picks up issues you created.")
+        console.print("  Leave blank to pick up all issues.\n")
+        owner = questionary.text(
+            "Owner (GitHub username):",
+            default=detected_user,
+        ).ask()
+    else:
+        console.print("  Set an owner to only pick up issues you created.")
+        console.print("  Leave blank to pick up all issues.\n")
+        owner = questionary.text(
+            "Owner (GitHub username, or blank for all):",
+            default="",
+        ).ask()
+
+    owner = (owner or "").strip()
 
     ready_label = _primary_label(label_config.ready_for_dev)
     if ready_label:
@@ -311,6 +404,7 @@ def _configure_routing(label_config: LabelConfig) -> RoutingConfig:
     ignore_labels = [v.strip() for v in (ignore_input or "").split(",") if v.strip()]
 
     return RoutingConfig(
+        owner=owner,
         require_ready_label=require_label if require_label is not None else True,
         ignore_labels=ignore_labels,
     )
@@ -403,6 +497,7 @@ def _show_summary(
     system: SystemConfig,
     routing: RoutingConfig | None = None,
     label_config: LabelConfig | None = None,
+    llm_config: LLMConfig | None = None,
     memory_config: MemoryConfig | None = None,
     relay_config: RelayConfig | None = None,
 ) -> None:
@@ -411,9 +506,21 @@ def _show_summary(
     console.print(f"  Project: [cyan]{project_dir}[/cyan]")
     console.print(f"  Polling: every {system.polling_interval_minutes}m")
     console.print(f"  Timeout: {system.session_timeout_minutes}m")
+    if llm_config:
+        # Show just the base command (first word)
+        base_cmd = llm_config.cmd_one_shot.split()[0]
+        defaults = LLMConfig()
+        if llm_config.cmd_one_shot != defaults.cmd_one_shot:
+            console.print(f"  LLM:     [cyan]{base_cmd}[/cyan] (custom)")
+        else:
+            console.print(f"  LLM:     {base_cmd}")
     if memory_config:
         console.print(f"  Search:  {memory_config.backend}")
     if routing:
+        if routing.owner:
+            console.print(f"  Owner:   [cyan]{routing.owner}[/cyan] (only your issues)")
+        else:
+            console.print("  Owner:   (all users)")
         mode = "require 'ready-for-dev' label" if routing.require_ready_label else "all open issues"
         console.print(f"  Routing: {mode}")
         if routing.ignore_labels:

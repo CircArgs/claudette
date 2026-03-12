@@ -83,6 +83,7 @@ def _parse_issue(repo: str, data: dict) -> Issue:
         labels=[lbl["name"] for lbl in data.get("labels", [])],
         comments=[],
         is_pull_request="pull_request" in data,
+        author=data.get("user", {}).get("login", ""),
         created_at=_parse_datetime(data.get("created_at")),
         updated_at=_parse_datetime(data.get("updated_at")),
     )
