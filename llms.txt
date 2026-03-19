@@ -1,0 +1,43 @@
+# claudette
+
+> Autonomous GitHub-mediated orchestration system. File an issue, walk away, come back to a PR. Claudette watches your repos, builds a cross-repo dependency graph, and launches LLM coding sessions that dispatch sub-agents via git worktrees to write code, run tests, review PRs, and merge them.
+
+Claudette is LLM-agnostic -- the LLM commands are configurable strings in config.yaml (`llm.cmd_session`, `llm.cmd_one_shot`, `llm.cmd_subagent`). Claude Code is the default, but any CLI-based coding agent works. Requires the `gh` CLI (authenticated) and Python 3.11+.
+
+## Install
+
+```bash
+curl -sSL https://raw.githubusercontent.com/CircArgs/claudette/main/install.sh | bash
+```
+
+Or manually: `uv tool install git+https://github.com/CircArgs/claudette.git` / `pip install git+https://github.com/CircArgs/claudette.git`
+
+## Instructions for LLM Agents
+
+- To get started: `claudette init <dir>` -- it handles repo discovery, config, labels, cron, and everything else interactively.
+- The primary workflow is: user creates a GitHub issue with the `claudette: ready-for-dev` label, claudette picks it up on the next cron tick, launches a Claude Code session, and opens a PR.
+- Cross-repo dependencies use `Depends on owner/repo#8` syntax in issue bodies.
+- Auto-merge is on by default (squash). Disable with `deterministic_rules.auto_merge_approved_prs: false`.
+- Autonomy (self-directed work) is off by default. Enable with `claudette autonomy on`.
+- Config lives at `<project-dir>/.claudette/config.yaml`. The `claudette config set` command can update individual values.
+- When debugging, check: `claudette status`, `claudette session -f` (tail logs), `claudette why <issue-ref>`, and `claudette metrics`.
+
+## Getting Started
+
+- [README](https://github.com/CircArgs/claudette/blob/main/README.md): Install, quick start, architecture overview
+- [Configuration](https://github.com/CircArgs/claudette/blob/main/docs/configuration.md): Full config.yaml reference with labels, routing, budgets, cron, multi-project
+- [CLI Reference](https://github.com/CircArgs/claudette/blob/main/docs/cli.md): Every command and option
+
+## Core Features
+
+- [Auto-merge & PR Rules](https://github.com/CircArgs/claudette/blob/main/docs/pr-rules.md): Merge methods, auto-review, stale detection, retry/escalation
+- [Agent Pipeline](https://github.com/CircArgs/claudette/blob/main/docs/pipeline.md): Multi-stage pipeline (scout/architect/builder/tester/reviewer)
+- [Cross-repo Coordination](https://github.com/CircArgs/claudette/blob/main/docs/cross-repo.md): Dependency graph, blocking, cycle detection
+- [Autonomy](https://github.com/CircArgs/claudette/blob/main/docs/autonomy.md): Discover, improve, ideate modes for self-directed work
+
+## Optional
+
+- [Metrics & Notifications](https://github.com/CircArgs/claudette/blob/main/docs/metrics.md): Tracking, webhooks, Rich TUI dashboard
+- [Semantic Memory](https://github.com/CircArgs/claudette/blob/main/docs/memory.md): Search index backends (dense, bm25, hybrid)
+- [Command Relay](https://github.com/CircArgs/claudette/blob/main/docs/relay.md): File-based IPC for sandboxed Claude environments
+- [Contributing](https://github.com/CircArgs/claudette/blob/main/CONTRIBUTING.md): Dev setup, testing architecture, project structure

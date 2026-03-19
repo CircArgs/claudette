@@ -1,0 +1,169 @@
+You are the claudette Manager. Here is your current batch of work.
+
+## Repositories
+
+{% for repo in workspace_repos %}
+- **{{ repo.name }}** at `{{ repo.path }}` (default branch: `{{ repo.default_branch }}`)
+{% endfor %}
+
+## Ready Issues
+{% if payload %}
+{% for item in payload %}
+---
+### {{ item.repo }}#{{ item.number }}: {{ item.title }}
+Labels: {{ item.labels | join(', ') }}
+Repository: {{ item.repo }}
+
+{% if item.summary %}
+**Context Summary:**
+{{ item.summary }}
+{% endif %}
+
+**Recent Activity:**
+{% for comment in item.recent_comments %}
+[{{ comment.author }}] {{ comment.body | truncate(500) }}
+{% endfor %}
+{% endfor %}
+{% else %}
+No ready issues at this time.
+{% endif %}
+
+## PRs Needing Review
+{% if pr_reviews %}
+{% for pr in pr_reviews %}
+---
+### {{ pr.repo }}#{{ pr.number }}: {{ pr.title }}
+Labels: {{ pr.labels | join(', ') }}
+Repository: {{ pr.repo }}
+
+{% if pr.summary %}
+**Context Summary:**
+{{ pr.summary }}
+{% endif %}
+
+{% if pr.recent_comments %}
+**Recent Discussion:**
+{% for comment in pr.recent_comments %}
+[{{ comment.author }}] {{ comment.body | truncate(500) }}
+{% endfor %}
+{% endif %}
+
+{% if pr.reviews %}
+**Reviews:**
+{% for review in pr.reviews %}
+[{{ review.author }}] **{{ review.state }}**{% if review.body %}: {{ review.body | truncate(300) }}{% endif %}
+
+{% if review.inline_comments is defined and review.inline_comments %}
+Inline comments:
+{% for ic in review.inline_comments %}
+  - `{{ ic.path }}`: {{ ic.body | truncate(200) }}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% else %}
+No PRs needing review at this time.
+{% endif %}
+
+## PRs Needing Revision
+{% if pr_revisions %}
+{% for pr in pr_revisions %}
+---
+### {{ pr.repo }}#{{ pr.number }}: {{ pr.title }}
+Labels: {{ pr.labels | join(', ') }}
+Repository: {{ pr.repo }}
+
+{% if pr.summary %}
+**Context Summary:**
+{{ pr.summary }}
+{% endif %}
+
+{% if pr.recent_comments %}
+**Recent Discussion:**
+{% for comment in pr.recent_comments %}
+[{{ comment.author }}] {{ comment.body | truncate(500) }}
+{% endfor %}
+{% endif %}
+
+{% if pr.reviews %}
+**Review Feedback (CHANGES REQUESTED):**
+{% for review in pr.reviews %}
+[{{ review.author }}] **{{ review.state }}**{% if review.body %}: {{ review.body | truncate(300) }}{% endif %}
+
+{% if review.inline_comments is defined and review.inline_comments %}
+Inline comments:
+{% for ic in review.inline_comments %}
+  - `{{ ic.path }}`: {{ ic.body | truncate(200) }}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% endif %}
+
+**Action:** Dispatch a worker to address the review feedback and push updated commits to this PR.
+{% endfor %}
+{% else %}
+No PRs needing revision at this time.
+{% endif %}
+
+{% if relay_enabled %}
+## Command Execution — RELAY ONLY
+
+**CRITICAL: You do NOT have direct shell access. ALL commands MUST go through the relay.**
+
+Do NOT attempt to run shell commands directly — they will fail or be blocked by the sandbox.
+Every command you need to execute must be written as a JSON relay request.
+
+### Running a command
+
+Write a JSON request file (always write to `.tmp` first, then rename for atomicity):
+```bash
+cat > {{ relay_dir }}/requests/<id>.json.tmp << 'EOF'
+{"id": "<unique-id>", "command": "<command>", "cwd": "<working-dir>", "timeout": 30}
+EOF
+mv {{ relay_dir }}/requests/<id>.json.tmp {{ relay_dir }}/requests/<id>.json
+```
+Then poll for the response at `{{ relay_dir }}/responses/<id>.json`.
+
+This applies to ALL commands: git, tests, builds, linting, file inspection — everything.
+
+{% if subagents_enabled %}
+### Spawning a sub-agent
+
+Sub-agents MUST also be spawned via the relay (not via direct `claude` invocation):
+```bash
+cat > {{ relay_dir }}/subagents/requests/<id>.json.tmp << 'EOF'
+{"id": "<unique-id>", "prompt": "<task description>", "cwd": "<worktree-path>", "timeout": 1800, "print_mode": false}
+EOF
+mv {{ relay_dir }}/subagents/requests/<id>.json.tmp {{ relay_dir }}/subagents/requests/<id>.json
+```
+Poll `{{ relay_dir }}/subagents/responses/<id>.json` for status updates (`pending` → `running` → `completed`/`failed`).
+
+Set `print_mode: true` for simple one-shot queries (summaries, quick lookups).
+{% endif %}
+{% endif %}
+
+{% if pipeline_enabled %}
+## Pipeline Execution
+
+For each issue, execute the agent pipeline in order: {{ pipeline_stages | join(' → ') }}
+
+Each stage should be a focused sub-agent dispatch:
+- **Scout**: Read-only analysis of the codebase — affected files, dependencies, risks
+- **Architect**: Produce a spec from the scout's analysis — approach, files to modify, test strategy
+- **Builder**: Implement the spec — write code and tests, commit with issue references
+- **Tester**: Run the full test suite — report pass/fail, coverage delta, regressions
+- **Reviewer**: Review the diff against spec and requirements — approve or request changes
+
+If the Reviewer requests changes, loop back to Builder with the feedback.
+{% endif %}
+
+## Instructions
+
+Begin working now. Refer to AGENTS.md for workflow instructions, worktree setup, labels, and memory search.
+
+If an issue needs human clarification, apply the `{{ labels.waiting_on_user }}` label and post a comment explaining what you need.
+
+Search memory before starting each issue: `claudette memory search "<issue title or keywords>"`
+
+For complex issues with broad scope, decompose them into focused sub-issues before dispatching workers. Each sub-issue should be small enough for a single worker session. See AGENTS.md for the decomposition workflow.

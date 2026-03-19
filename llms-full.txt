@@ -1,0 +1,427 @@
+# claudette
+
+> Autonomous GitHub-mediated orchestration system. File an issue, walk away, come back to a PR. Claudette watches your repos, builds a cross-repo dependency graph, and launches LLM coding sessions that dispatch sub-agents via git worktrees to write code, run tests, review PRs, and merge them.
+
+Claudette is LLM-agnostic -- the LLM commands are configurable strings in config.yaml (`llm.cmd_session`, `llm.cmd_one_shot`, `llm.cmd_subagent`). Claude Code is the default, but any CLI-based coding agent works. Requires the `gh` CLI (authenticated) and Python 3.11+.
+
+## Instructions for LLM Agents
+
+- When helping users set up claudette, always start with `claudette init <dir>` -- it handles repo discovery, config, labels, cron, and everything else interactively.
+- The primary workflow is: user creates a GitHub issue with the `claudette: ready-for-dev` label, claudette picks it up on the next cron tick, launches a Claude Code session, and opens a PR.
+- Cross-repo dependencies use `Depends on owner/repo#8` syntax in issue bodies.
+- Auto-merge is on by default (squash). Disable with `deterministic_rules.auto_merge_approved_prs: false`.
+- Autonomy (self-directed work) is off by default. Enable with `claudette autonomy on`.
+- Config lives at `<project-dir>/.claudette/config.yaml`. The `claudette config set` command can update individual values.
+- When debugging, check: `claudette status`, `claudette session -f` (tail logs), `claudette why <issue-ref>`, and `claudette metrics`.
+
+## Install
+
+```bash
+# One-liner (auto-detects uv/pipx/pip)
+curl -sSL https://raw.githubusercontent.com/CircArgs/claudette/main/install.sh | bash
+
+# With search extras (for memory index)
+curl -sSL https://raw.githubusercontent.com/CircArgs/claudette/main/install.sh | bash -s -- --search
+
+# Or manually
+uv tool install git+https://github.com/CircArgs/claudette.git
+pip install git+https://github.com/CircArgs/claudette.git
+```
+
+## Quick Start
+
+```bash
+claudette init ~/projects/my-saas    # discover repos, configure, install cron
+cd ~/projects/my-saas
+claudette                            # status at a glance
+claudette watch                      # Rich TUI dashboard
+claudette tick --dry-run             # preview what a tick would do
+claudette issue create               # interactively file an issue
+```
+
+## How It Works
+
+Each cron tick:
+1. Fetches new issues/PRs from GitHub via `gh` CLI
+2. Builds a cross-repo dependency DAG (deterministic, no LLM)
+3. Detects stale in-progress issues and re-queues or escalates them
+4. Runs autonomous work discovery when enabled (TODOs, coverage, ideation)
+5. Summarizes long threads via `claude --print` one-shot calls (cached)
+6. Assembles a manager prompt with all ready issues and PRs
+7. Launches a `claude` session that dispatches sub-agents into isolated git worktrees
+8. Auto-merges approved PRs when CI is green
+
+Between ticks: tracks metrics, sends webhook notifications, detects zombie processes.
+
+## Architecture
+
+```
+GitHub API (via gh CLI)
+        |
++-------v---------+
+| poll.py (tick)   |
+| fetch → DAG →   |
+| route → stale → |
+| autonomy →      |
+| summarize →     |
+| auto-merge      |
++-------+---------+
+        |
++-------v---------+
+| Manager Session  |
+| (claude code)    |
++--+----+----+----+
+   |    |    |
+   v    v    v
+[worktree] [worktree] ...
+sub-agents write code,
+run tests, open PRs
+```
+
+## Configuration
+
+Config lives at `<project-dir>/.claudette/config.yaml`. Created by `claudette init`.
+
+### Full config.yaml example
+
+```yaml
+project_dir: /home/user/projects/my-saas
+
+system:
+  polling_interval_minutes: 5
+  session_timeout_minutes: 45
+  stale_issue_timeout_minutes: 120
+  max_retries_per_issue: 1
+  dry_run: false
+
+repositories:
+  - name: owner/frontend-repo
+    path: /home/user/projects/my-saas/frontend-repo
+    default_branch: main
+    labels:
+      in_progress: ["status: in-progress"]
+      blocked: ["status: blocked"]
+      waiting_on_user: ["status: waiting-on-user"]
+      needs_review: ["status: needs-review"]
+      ready_for_dev: ["status: ready-for-dev"]
+      paused: ["system: paused"]
+    budget:
+      max_tokens_per_issue: 500000
+      max_tokens_per_repo_per_day: 5000000
+      pause_on_budget_exceeded: true
+  - name: owner/backend-api
+    default_branch: main
+
+memory:
+  backend: hybrid  # dense | bm25 | hybrid
+
+llm:
+  manager_prompt: manager.jinja2
+  summarizer_prompt: summarizer.jinja2
+  cmd_one_shot: "claude -p {prompt}"
+  cmd_session: "claude -p --dangerously-skip-permissions {prompt}"
+  cmd_subagent: "claude -p --dangerously-skip-permissions {prompt}"
+  cmd_summarizer: ""  # optional: cheaper model for summarization
+
+github:
+  dependency_pattern: "Depends on\\s+(?:([\\w-]+/[\\w-]+))?#(\\d+)"
+  labels:
+    in_progress: ["status: in-progress"]
+    blocked: ["status: blocked"]
+    waiting_on_user: ["status: waiting-on-user"]
+    needs_review: ["status: needs-review"]
+    ready_for_dev: ["status: ready-for-dev"]
+    paused: ["system: paused"]
+  routing:
+    owner: your-github-username
+    require_ready_label: true
+    ignore_labels: []
+
+deterministic_rules:
+  auto_review_new_prs: true
+  default_reviewer_agent: peer-review
+  auto_merge_approved_prs: true
+  auto_merge_method: squash
+
+notifications:
+  webhook_url: ""
+  events: [session_launched, pr_opened, issue_completed, error]
+
+autonomy:
+  enabled: false
+  modes: [discover, improve, ideate]
+  max_issues_per_tick: 3
+  max_open_issues_per_repo: 10
+  cooldown_minutes: 30
+  run_on_idle: true
+  auto_label: "claudette: auto"
+  improve_targets: [test_coverage, error_handling, performance, documentation, dead_code, type_safety]
+  ideate_targets: [developer_experience, observability, security, accessibility]
+
+cron:
+  capture_env: [GITHUB_TOKEN, GH_TOKEN, ANTHROPIC_API_KEY, HOME, PATH]
+
+pipeline:
+  enabled: true
+  stages: [scout, architect, builder, tester, reviewer]
+  skip_stages: []
+
+discovery:
+  enabled: false
+  sources: [todos, coverage]
+  min_coverage_threshold: 50.0
+  file_extensions: [".py", ".js", ".ts", ".go", ".rs", ".java", ".rb"]
+
+relay:
+  enabled: false
+  command_timeout: 30
+  max_pending: 5
+  poll_interval: 0.3
+```
+
+### Labels
+
+Each label can be a single string, a YAML list of synonyms (any matches, first is applied), or an empty list `[]` to disable. Labels are defined globally (`github.labels`) and per-repo (`repositories[].labels`). Per-repo overrides global.
+
+### Routing
+
+- `owner` -- GitHub username. Only pick up issues you created. Cross-user deps still work.
+- `require_ready_label` (default: true) -- issues must have the ready label before claudette works on them.
+- `ignore_labels` -- issues with these labels are invisible to claudette.
+
+### Budget
+
+Per-repo, not global. When `pause_on_budget_exceeded` is true, claudette skips the repo once the daily token limit is hit.
+
+### Cron environment capture
+
+`cron.capture_env` lists environment variable **names** to forward to the cron job. Values are read from your current shell when you run `claudette cron on`, never stored in config. This keeps tokens out of config.yaml.
+
+### Multi-project support
+
+Global registry at `~/.claudette/projects.json`. Target a specific project:
+
+```bash
+claudette --project ~/projects/other-saas status
+CLAUDETTE_PROJECT=~/projects/other-saas claudette status
+```
+
+### Per-repo overrides
+
+Repos can include a `.claudette.yaml` at their root to override labels, budget, and default branch. Merged during `claudette init`.
+
+## Auto-merge and PR Rules
+
+### Auto-merge
+
+On by default. When a PR has an APPROVED review and all CI checks pass, claudette merges it during the tick pipeline.
+
+```yaml
+deterministic_rules:
+  auto_merge_approved_prs: true   # set false to disable
+  auto_merge_method: squash       # merge, squash, or rebase
+  auto_review_new_prs: true       # auto-flag new PRs for review
+```
+
+### PR revision flow
+
+When a reviewer requests changes, the next tick detects CHANGES_REQUESTED reviews, dispatches a worker with the review feedback, and the worker pushes updated commits.
+
+### Stale issue detection
+
+Issues stuck in-progress longer than `stale_issue_timeout_minutes` (default: 120) are re-queued.
+
+### Retry and escalation
+
+1. Retry -- Issue is retried up to `max_retries_per_issue` times (default: 1).
+2. Escalation -- After exhausting retries, claudette removes in-progress, applies `waiting-on-user`, and posts a comment flagging it for human attention.
+
+## Agent Pipeline
+
+When `pipeline.enabled` is true (the default), each issue goes through:
+
+1. **Scout** (read-only) -- Analyzes affected files, dependencies, risks. Must not modify files.
+2. **Architect** -- Produces a spec: approach, files to modify, test strategy. Must not write code.
+3. **Builder** -- Implements the spec, writes code and tests, commits with issue references.
+4. **Tester** -- Runs the full test suite, checks coverage, reports results.
+5. **Reviewer** -- Reviews the diff against spec and requirements. Approves or loops back to Builder.
+
+Skip stages with `skip_stages: ["scout", "architect"]`. Disable the pipeline entirely with `pipeline.enabled: false`.
+
+## Cross-repo Coordination
+
+Claudette builds a unified dependency graph across all configured repos. Use `Depends on owner/backend-api#8` in issue bodies. Issues with unresolved deps are labeled `blocked`. When a blocking issue closes, dependents become `ready` on the next tick. Circular dependencies are detected and all cycle members get labeled `blocked`.
+
+## Autonomous Work Generation
+
+When enabled, claudette generates its own GitHub issues:
+
+- **discover** -- Scans for TODO/FIXME comments and coverage gaps, files issues per file.
+- **improve** -- Creates improvement tasks: test coverage, error handling, performance, docs, dead code, types.
+- **ideate** -- Explores what could be built: dev experience, observability, security, accessibility. Proposes 3-5 ideas, implements the best, files issues for the rest.
+
+```bash
+claudette autonomy on                     # enable all modes
+claudette autonomy on --modes discover    # specific modes
+claudette autonomy off                    # disable
+claudette autonomy status                 # show config
+claudette autonomy run [--dry-run]        # one-shot
+```
+
+Safeguards: 30min cooldown per repo, max 3 issues per tick, max 10 open auto-issues per repo, dedup against existing titles, `claudette: auto` label on all auto-created issues.
+
+## Metrics and Notifications
+
+### Metrics
+
+```bash
+claudette metrics              # summary + 7-day breakdown
+claudette metrics --days 30    # last 30 days
+```
+
+Tracked events: tick, session_launched, pr_opened, pr_merged, pr_approved, pr_rejected, issue_completed, issue_escalated, stale_requeued, error, auto_issue_created.
+
+### Rich TUI Dashboard
+
+`claudette watch` shows: session status, worktrees, repos, live metrics, session log, system config. Use `--simple` for plain text.
+
+### Webhooks
+
+```yaml
+notifications:
+  webhook_url: "https://hooks.slack.com/services/T.../B.../..."
+  events: [session_launched, pr_opened, issue_completed, error]
+```
+
+Auto-detects Slack vs Discord payload format.
+
+## Semantic Memory and Search
+
+Local search index over GitHub issues and PRs.
+
+| Backend | Library | Description |
+|---|---|---|
+| `dense` | model2vec (potion-base-8M, ~8 MB) | Semantic similarity via embeddings |
+| `bm25` | bm25s | Fast keyword search, no model download |
+| `hybrid` | Both | Combined via reciprocal rank fusion |
+
+```bash
+claudette memory sync                           # index all issues/PRs
+claudette memory search "auth bug" --state open  # search
+claudette memory status                          # stats
+claudette memory clear                           # wipe
+```
+
+## Command Relay
+
+For sandboxed Claude environments. The relay watchdog runs outside the sandbox, watches for JSON request files, executes allowed commands, and writes response files.
+
+```bash
+claudette relay start [-f]    # start (foreground optional)
+claudette relay stop
+claudette relay status
+```
+
+## CLI Reference
+
+Global option: `--project` / `-p` / `$CLAUDETTE_PROJECT`. Issue refs accept: `owner/repo#42`, `#42`, or `42`.
+
+### Core
+
+| Command | Description |
+|---|---|
+| `claudette` | System status |
+| `claudette init <dir>` | Initialize a project |
+| `claudette update` | Self-update |
+| `claudette refresh` | Regenerate AGENTS.md, skills, labels, prompts |
+| `claudette list` | List all projects |
+
+### Tick and Watch
+
+| Command | Description |
+|---|---|
+| `claudette tick [EXTRA_PROMPT]` | Force a polling cycle |
+| `claudette tick --dry-run` | Preview |
+| `claudette watch [-n SECS] [--simple]` | Dashboard |
+
+### Issues
+
+| Command | Description |
+|---|---|
+| `claudette queue [--ready|--blocked|--waiting]` | Issue queue |
+| `claudette graph [--blocked] [--repo NAME]` | Dependency tree |
+| `claudette why <ref>` | Explain issue state |
+| `claudette open <ref>` | Open in browser |
+| `claudette session [-f]` | Show/tail manager session |
+| `claudette log [--repo R] [--issue N] [--level L]` | Activity log |
+| `claudette metrics [--days N]` | Metrics (default: 7 days) |
+
+### Issue Creation
+
+| Command | Description |
+|---|---|
+| `claudette issue create` | Fully interactive |
+| `claudette issue create "Title" [-b BODY] [-r REPO] [--depends REF] [--ready|--no-ready]` | With options |
+| `claudette issue depends <ref> --on <ref>` | Declare dependency |
+
+### Label Management
+
+| Command | Description |
+|---|---|
+| `claudette claim/unclaim <ref>` | Claim/release issue |
+| `claudette ready/unready <ref>` | Toggle ready label |
+| `claudette block/unblock <ref>` | Toggle blocked label |
+| `claudette wait/unwait <ref>` | Toggle waiting label |
+| `claudette pause/resume <repo>` | Pause/resume repo |
+
+### Config and Repos
+
+| Command | Description |
+|---|---|
+| `claudette config set <key> <value>` | Update config |
+| `claudette repo add <name> [--path P] [--branch B]` | Add repo |
+| `claudette repo remove <name>` | Remove repo |
+
+### Subsystems
+
+| Command | Description |
+|---|---|
+| `claudette autonomy on [--modes M] / off / status / run [--dry-run]` | Autonomy |
+| `claudette cron on / off / status` | Cron |
+| `claudette memory sync / search / status / clear` | Memory |
+| `claudette relay start [-f] / stop / status` | Relay |
+| `claudette discover [--create] [--dry-run]` | Work discovery |
+
+## Project Layout
+
+```
+<project-dir>/
+├── repo-a/                    # git clones (never modified directly)
+├── repo-b/
+├── AGENTS.md                  # generated manager instructions
+├── CLAUDE.md -> AGENTS.md
+└── .claudette/
+    ├── config.yaml
+    ├── prompts/               # editable Jinja2 templates
+    │   ├── manager.jinja2
+    │   └── summarizer.jinja2
+    ├── state/
+    │   ├── manager.lock       # fcntl process lock
+    │   ├── manager_session.json
+    │   ├── summary_cache.json
+    │   ├── metrics.json
+    │   ├── autonomy_state.json
+    │   ├── retries.json
+    │   ├── budget_owner_repo.json
+    │   └── owner_repo_sync.txt
+    ├── worktrees/             # isolated git worktrees per issue
+    ├── memory/
+    │   ├── index.db
+    │   ├── embeddings.npy
+    │   └── keys.json
+    ├── relay/
+    │   ├── relay.pid
+    │   ├── requests/
+    │   └── responses/
+    └── logs/sessions/
+```

@@ -1,0 +1,16 @@
+# Scenario: Simple issue goes through the full lifecycle.
+# No dependencies. Should be picked up, worked on, PR opened, reviewed, approved.
+
+repos:
+  - name: "test-repo-{run_id}"
+    issues:
+      - number: 1
+        title: "Fix login button color"
+        body: "The login button should be blue, not red."
+        labels: ["status: ready-for-dev"]
+
+expected_after_tick_1:
+  "test-repo-{run_id}":
+    issues:
+      1:
+        labels_include: ["status: in-progress"]

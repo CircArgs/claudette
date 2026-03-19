@@ -1,0 +1,18 @@
+Summarize the following GitHub thread into a concise technical brief. Extract:
+
+1. **Objective**: What needs to be done (1-2 sentences)
+2. **Constraints**: Technical requirements, API contracts, or architectural decisions mentioned
+3. **Current Status**: Where the work stands based on the conversation
+4. **Open Questions**: Unresolved decisions or blockers
+
+Be concise. Use bullet points. Do not editorialize.
+
+---
+
+**{{ repo }}#{{ number }}**: {{ title }}
+
+{% for comment in comments %}
+[{{ comment.author }}]:
+{{ comment.body }}
+
+{% endfor %}

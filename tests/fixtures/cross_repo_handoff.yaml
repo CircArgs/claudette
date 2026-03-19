@@ -1,0 +1,25 @@
+# Scenario: Frontend issue is blocked by backend issue.
+# After backend closes, frontend should unblock on the next tick.
+
+repos:
+  - name: "test-backend-{run_id}"
+    issues:
+      - number: 1
+        title: "Add /users endpoint"
+        labels: ["status: ready-for-dev"]
+  - name: "test-frontend-{run_id}"
+    issues:
+      - number: 1
+        title: "Build user profile page"
+        body: "Depends on {owner}/test-backend-{run_id}#1"
+        labels: ["status: ready-for-dev"]
+
+expected_after_tick_1:
+  "test-frontend-{run_id}":
+    issues:
+      1:
+        labels: ["status: blocked"]
+  "test-backend-{run_id}":
+    issues:
+      1:
+        labels_include: ["status: in-progress"]
