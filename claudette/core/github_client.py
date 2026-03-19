@@ -247,6 +247,45 @@ class LiveGitHubClient:
         url = f"/repos/{owner}/{name}/issues/{number}"
         self._request("PATCH", url, json={"body": body})
 
+    def check_ci_status(self, repo: str, number: int) -> bool:
+        owner, name = split_repo(repo)
+        # Get the head SHA from the PR
+        pr_url = f"/repos/{owner}/{name}/pulls/{number}"
+        pr_resp = self._request("GET", pr_url)
+        head_sha = pr_resp.json().get("head", {}).get("sha", "")
+        if not head_sha:
+            return False
+        # Check combined status
+        status_url = f"/repos/{owner}/{name}/commits/{head_sha}/status"
+        status_resp = self._request("GET", status_url)
+        state = status_resp.json().get("state", "pending")
+        if state == "failure":
+            return False
+        # Also check check-runs (GitHub Actions)
+        checks_url = (
+            f"/repos/{owner}/{name}/commits/{head_sha}/check-runs"
+        )
+        checks_resp = self._request("GET", checks_url)
+        runs = checks_resp.json().get("check_runs", [])
+        for run in runs:
+            conclusion = run.get("conclusion")
+            if conclusion and conclusion not in ("success", "skipped", "neutral"):
+                return False
+            if run.get("status") != "completed":
+                return False
+        return True
+
+    def merge_pr(
+        self, repo: str, number: int, method: str = "squash"
+    ) -> bool:
+        owner, name = split_repo(repo)
+        url = f"/repos/{owner}/{name}/pulls/{number}/merge"
+        try:
+            self._request("PUT", url, json={"merge_method": method})
+            return True
+        except Exception:
+            return False
+
 
 def _parse_next_link(link_header: str | None) -> str | None:
     """Extract the 'next' URL from a GitHub Link header."""

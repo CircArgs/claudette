@@ -3,9 +3,18 @@
 from __future__ import annotations
 
 import json
+from enum import Enum
 from pathlib import Path
 
 from pydantic import BaseModel, Field
+
+
+class ForgeType(Enum):
+    """Supported forge platforms."""
+
+    GITHUB = "github"
+    GITLAB = "gitlab"
+    GITEA = "gitea"
 
 # The file name claudette looks for inside individual repos
 REPO_CONFIG_FILE = ".claudette.yaml"
@@ -117,6 +126,8 @@ class RoutingConfig(BaseModel):
 
 
 class GitHubConfig(BaseModel):
+    forge_type: ForgeType = ForgeType.GITHUB
+    forge_url: str = ""  # custom URL for self-hosted (GitLab/Gitea); empty = default
     dependency_pattern: str = r"Depends on\s+(?:([\w-]+/[\w-]+))?#(\d+)"
     labels: LabelConfig = Field(default_factory=LabelConfig)
     routing: RoutingConfig = Field(default_factory=RoutingConfig)

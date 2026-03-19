@@ -8,7 +8,6 @@ import json
 import logging
 import os
 import signal
-import subprocess
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -25,8 +24,11 @@ from claudette.core.notifications import notify
 
 if TYPE_CHECKING:
     from claudette.protocols.clock import Clock
-    from claudette.protocols.github import GitHubClient, Issue
+    from claudette.protocols.forge import ForgeClient, Issue
     from claudette.protocols.llm import LLMClient
+
+    # Backward-compat alias used in type annotations throughout this module
+    GitHubClient = ForgeClient
 
 logger = logging.getLogger("claudette.poll")
 
@@ -726,6 +728,7 @@ def _phase_auto_merge(ctx: TickContext, result: TickResult, graph: Any) -> None:
         return
 
     merge_method = config.deterministic_rules.auto_merge_method
+    github = ctx.github
 
     for key, issue in graph.nodes.items():
         if not issue.is_pull_request:
@@ -736,45 +739,25 @@ def _phase_auto_merge(ctx: TickContext, result: TickResult, graph: Any) -> None:
         if not has_approval:
             continue
 
-        # Check if CI is passing via gh pr checks
+        # Check if CI is passing via the forge client protocol
         try:
-            checks_result = subprocess.run(
-                ["gh", "pr", "checks", str(issue.number), "--repo", issue.repo],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            if checks_result.returncode != 0:
+            ci_ok = github.check_ci_status(issue.repo, issue.number)
+            if not ci_ok:
                 logger.debug("CI not passing for %s, skipping auto-merge", key)
                 continue
         except Exception as e:
             logger.warning("Failed to check CI for %s: %s", key, e)
             continue
 
-        # Merge the PR
+        # Merge the PR via the forge client protocol
         try:
-            merge_result = subprocess.run(
-                [
-                    "gh",
-                    "pr",
-                    "merge",
-                    str(issue.number),
-                    "--repo",
-                    issue.repo,
-                    f"--{merge_method}",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            if merge_result.returncode == 0:
+            merged = github.merge_pr(issue.repo, issue.number, method=merge_method)
+            if merged:
                 result.auto_merged.append(key)
                 ctx.metrics.record("pr_merged", repo=issue.repo, pr=key)
                 logger.info("Auto-merged PR %s via %s", key, merge_method)
             else:
-                logger.warning(
-                    "Auto-merge failed for %s: %s", key, merge_result.stderr.strip()
-                )
+                logger.warning("Auto-merge failed for %s", key)
         except Exception as e:
             logger.warning("Auto-merge failed for %s: %s", key, e)
 
