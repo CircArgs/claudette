@@ -212,3 +212,36 @@ class GhCliGitHubClient:
             method="PATCH",
             body={"body": body},
         )
+
+    def check_ci_status(self, repo: str, number: int) -> bool:
+        # Get the head SHA from the PR
+        pr_data = _gh_api(f"/repos/{repo}/pulls/{number}")
+        head_sha = pr_data.get("head", {}).get("sha", "")
+        if not head_sha:
+            return False
+        # Check combined commit status
+        status_data = _gh_api(f"/repos/{repo}/commits/{head_sha}/status")
+        state = status_data.get("state", "pending")
+        if state == "failure":
+            return False
+        # Also check check-runs (GitHub Actions)
+        checks_data = _gh_api(f"/repos/{repo}/commits/{head_sha}/check-runs")
+        runs = checks_data.get("check_runs", [])
+        for run in runs:
+            conclusion = run.get("conclusion")
+            if conclusion and conclusion not in ("success", "skipped", "neutral"):
+                return False
+            if run.get("status") != "completed":
+                return False
+        return True
+
+    def merge_pr(self, repo: str, number: int, method: str = "squash") -> bool:
+        try:
+            _gh_api(
+                f"/repos/{repo}/pulls/{number}/merge",
+                method="PUT",
+                body={"merge_method": method},
+            )
+            return True
+        except Exception:
+            return False
